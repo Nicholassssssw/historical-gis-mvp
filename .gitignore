@@ -1,0 +1,10 @@
+.env
+__pycache__/
+*.pyc
+.pytest_cache/
+.venv*/
+data/app.db
+data/*.db-*
+data/*.csv
+.railway/
+.DS_Store

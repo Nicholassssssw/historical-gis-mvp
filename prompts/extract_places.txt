@@ -1,0 +1,15 @@
+You are extracting route places from a historical travel text written in Chinese or mixed Chinese/English.
+
+Return places in the order they are encountered in the text. Focus on geographical entities relevant to the traveller's route: settlements, gates, bridges, mountains, rivers, temples, ferries, roads, passes, lakes, administrative places, and named landscape features.
+
+For each place:
+- preserve the exact original written form in original_name;
+- give a conservative normalized_name only when normalization is obvious; otherwise repeat the original name;
+- preserve the date/day phrase if present;
+- quote the shortest source sentence that supports the extraction;
+- classify route_role as one of: passed, visited, stayed, departed, arrived, mentioned_only, uncertain;
+- infer place_type conservatively;
+- infer historical_region only when supported by the text/context; otherwise null;
+- confidence must be between 0 and 1.
+
+Do not invent coordinates. Do not collapse separate visits that occur at different positions in the route. Do not silently add places that are not in the text.

@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <meta name="description" content="Extract historical place names, reconcile coordinates, and build a traceable research map." />
+  <meta property="og:title" content="Historical GIS Workspace" />
+  <meta property="og:description" content="From historical text to a source-aware, editable route map." />
+  <meta property="og:image" content="__BASE_URL__/static/og.png" />
+  <meta name="twitter:card" content="summary_large_image" />
+  <title>Historical GIS Workspace</title>
+  <link rel="preconnect" href="https://js.arcgis.com" />
+  <link rel="stylesheet" href="https://js.arcgis.com/5.1/esri/themes/light/main.css" />
+  <script type="module" src="https://js.arcgis.com/5.1/"></script>
+  <link rel="stylesheet" href="/static/styles.css" />
+</head>
+<body>
+  <header class="site-header">
+    <div class="header-inner">
+      <a class="brand" href="/" aria-label="Historical GIS home">
+        <span class="brand-mark" aria-hidden="true">HG</span>
+        <span><strong>Historical GIS</strong><small>Research workspace</small></span>
+      </a>
+      <div class="provider-pill" id="providerStatus"><i></i><span>Connecting…</span></div>
+    </div>
+  </header>
+
+  <main>
+    <section class="intro" aria-labelledby="page-title">
+      <p class="eyebrow">TEXT → PLACES → COORDINATES → MAP</p>
+      <h1 id="page-title">把歷史文本，整理成可追溯的地圖。</h1>
+      <p>Gemini 抽取路線地名，你負責校訂；系統保留坐標來源、候選與人工修改記錄。</p>
+    </section>
+
+    <nav class="progress" aria-label="Workflow progress">
+      <div class="progress-step active" data-step="1"><span>1</span><div><strong>上載</strong><small>加入文本</small></div></div>
+      <div class="progress-line"></div>
+      <div class="progress-step" data-step="2"><span>2</span><div><strong>校訂</strong><small>確認地名</small></div></div>
+      <div class="progress-line"></div>
+      <div class="progress-step" data-step="3"><span>3</span><div><strong>配對</strong><small>檢視坐標</small></div></div>
+      <div class="progress-line"></div>
+      <div class="progress-step" data-step="4"><span>4</span><div><strong>製圖</strong><small>編輯路線</small></div></div>
+    </nav>
+
+    <section class="step-card" id="step1">
+      <div class="step-heading">
+        <div><span class="step-kicker">STEP 01</span><h2>加入研究文本</h2></div>
+        <p>支援 TXT、Markdown、Word 及文字型 PDF。</p>
+      </div>
+      <form id="uploadForm" class="upload-grid">
+        <label>研究名稱<input id="title" name="title" placeholder="例如：徐霞客浙遊日記" autocomplete="off" /></label>
+        <label class="year-field">歷史年份 <span>選填</span><input id="year" name="historical_year" type="number" placeholder="1636" /></label>
+        <label class="file-field">文本檔案<input id="file" name="file" type="file" accept=".txt,.md,.docx,.pdf" required /><span id="fileName">選擇檔案</span><small>掃描式 PDF 請先完成 OCR</small></label>
+        <div class="form-actions">
+          <button type="submit" id="uploadBtn">上載文本</button>
+          <button type="button" id="extractBtn" class="button-accent" disabled>用 Gemini 抽取地名</button>
+        </div>
+      </form>
+      <div class="status" id="uploadStatus" aria-live="polite"></div>
+    </section>
+
+    <section class="step-card hidden" id="step2">
+      <div class="step-heading">
+        <div><span class="step-kicker">STEP 02</span><h2>校訂地名</h2></div>
+        <p>更正名稱、順序與路線角色，確認後再查找坐標。</p>
+      </div>
+      <div class="toolbar">
+        <button id="confirmPlacesBtn" class="button-accent">確認地名並繼續</button>
+        <button id="savePlacesBtn" class="button-secondary">儲存修改</button>
+        <button id="addPlaceBtn" class="button-quiet">＋ 新增地名</button>
+        <button id="unconfirmPlacesBtn" class="button-quiet hidden">返回修改</button>
+      </div>
+      <div class="table-wrap">
+        <table id="placesTable">
+          <thead><tr>
+            <th>次序</th><th>原地名</th><th>標準名</th><th>日期</th><th>角色</th><th>歷史區域</th><th>原句</th><th>信心</th><th><span class="sr-only">動作</span></th>
+          </tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+      <div class="status" id="placesStatus" aria-live="polite"></div>
+    </section>
+
+    <section class="step-card hidden" id="step3">
+      <div class="step-heading">
+        <div><span class="step-kicker">STEP 03</span><h2>配對經緯度</h2></div>
+        <p>綜合歷史與現代來源；每個候選都保留出處和分數。</p>
+      </div>
+      <div class="source-strip" aria-label="Coordinate sources">
+        <span>CHGIS</span><span>Wikidata</span><span>OpenStreetMap</span><span>Local catalogues</span>
+      </div>
+      <div class="toolbar"><button id="geocodeBtn" class="button-accent">開始坐標配對</button></div>
+      <div class="status" id="geoStatus" aria-live="polite"></div>
+      <div class="table-wrap compact-table">
+        <table id="geoTable">
+          <thead><tr>
+            <th>次序</th><th>地名</th><th>分類</th><th>分數</th><th>來源</th><th>經度</th><th>緯度</th><th>改用候選</th>
+          </tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="step-card map-card hidden" id="step4">
+      <div class="step-heading">
+        <div><span class="step-kicker">STEP 04</span><h2>檢視與修訂地圖</h2></div>
+        <p>拖動點可覆寫坐標；路線會按文本次序即時重畫。</p>
+      </div>
+      <div class="toolbar">
+        <button id="showMapBtn" class="button-accent">載入地圖</button>
+        <a id="downloadMap" class="button-secondary button-link" href="#">下載 GeoJSON</a>
+        <button id="deleteMapPointBtn" class="button-danger" disabled>刪除所選地點</button>
+      </div>
+      <div class="map-shell">
+        <div id="mapView" class="map"></div>
+        <div class="map-meta">
+          <div class="legend" aria-label="Coordinate confidence legend">
+            <span><i class="dot confirmed"></i>已確認</span>
+            <span><i class="dot possible"></i>有可能</span>
+            <span><i class="dot insufficient"></i>資料不足</span>
+          </div>
+          <div class="status" id="mapStatus" aria-live="polite"></div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <p><strong>研究提示</strong>　坐標分類反映現有來源與規則，並不等同歷史位置的最終證明。</p>
+  </footer>
+
+  <script type="module" src="/static/app.js"></script>
+</body>
+</html>
