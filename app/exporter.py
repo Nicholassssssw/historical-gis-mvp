@@ -1,11 +1,16 @@
 from sqlalchemy.orm import Session
 from .models import Place, Project
+from .place_roles import MAPPED_ROUTE_ROLES, normalize_route_role
 
 
 def project_geojson(db: Session, project: Project):
     places = (
         db.query(Place)
-        .filter(Place.project_id == project.id, Place.active == True)
+        .filter(
+            Place.project_id == project.id,
+            Place.active == True,
+            Place.route_role.in_(MAPPED_ROUTE_ROLES),
+        )
         .order_by(Place.route_order)
         .all()
     )
@@ -22,7 +27,7 @@ def project_geojson(db: Session, project: Project):
             "name": p.normalized_name,
             "original_name": p.original_name,
             "date_text": p.date_text,
-            "route_role": p.route_role,
+            "route_role": normalize_route_role(p.route_role),
             "place_type": p.place_type,
             "historical_region": p.historical_region,
             "coord_class": p.coord_class,
@@ -57,6 +62,7 @@ def project_geojson(db: Session, project: Project):
         "properties": {
             "project_id": project.id,
             "historical_year": project.historical_year,
+            "historical_period": project.historical_period,
             "crs_note": "WGS84 / EPSG:4326",
         },
         "features": features,

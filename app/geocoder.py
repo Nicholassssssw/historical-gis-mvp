@@ -5,6 +5,7 @@ import os
 from difflib import SequenceMatcher
 from sqlalchemy.orm import Session
 from .models import Candidate, Place, Project
+from .place_roles import MAPPED_ROUTE_ROLES
 from .providers import default_providers
 
 
@@ -93,7 +94,11 @@ def score_and_classify(place: Place, provider_results):
 
 
 async def geocode_project(db: Session, project: Project):
-    places = db.query(Place).filter(Place.project_id == project.id, Place.active == True).order_by(Place.route_order).all()
+    places = db.query(Place).filter(
+        Place.project_id == project.id,
+        Place.active == True,
+        Place.route_role.in_(MAPPED_ROUTE_ROLES),
+    ).order_by(Place.route_order).all()
     previous_bias = None
     summary = []
 

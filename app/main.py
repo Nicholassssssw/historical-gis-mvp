@@ -10,18 +10,21 @@ from sqlalchemy.orm import Session
 
 load_dotenv()
 
-from .db import Base, engine, get_db
+from .db import Base, engine, ensure_compatibility_schema, get_db
 from .models import Candidate, Place, Project
 from .schemas import PlaceCreate, PlaceUpdate
-from .file_parser import extract_text
+from .file_parser import actual_page_count, extract_text
 from .extraction import extract_places_with_gemini
 from .geocoder import candidate_to_dict, geocode_project
 from .exporter import project_geojson
+from .place_roles import MAPPED_ROUTE_ROLES, normalize_route_role
+from .text_metrics import document_metrics, numeric_year_from_period
 
 BASE_DIR = Path(__file__).resolve().parent
 STATIC_DIR = BASE_DIR / "static"
 Path("./data").mkdir(exist_ok=True)
 Base.metadata.create_all(bind=engine)
+ensure_compatibility_schema()
 
 app = FastAPI(title="Historical GIS MVP", version="0.1.0")
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
@@ -50,7 +53,7 @@ def place_dict(p: Place, include_candidates: bool = False):
         "normalized_name": p.normalized_name,
         "date_text": p.date_text,
         "sentence": p.sentence,
-        "route_role": p.route_role,
+        "route_role": normalize_route_role(p.route_role),
         "place_type": p.place_type,
         "historical_region": p.historical_region,
         "confidence": p.confidence,
@@ -93,7 +96,7 @@ def config():
 async def upload_project(
     file: Annotated[UploadFile, File(...)],
     title: Annotated[str | None, Form()] = None,
-    historical_year: Annotated[int | None, Form()] = None,
+    historical_period: Annotated[str | None, Form()] = None,
     db: Session = Depends(get_db),
 ):
     content = await file.read()
@@ -104,10 +107,16 @@ async def upload_project(
     if not text.strip():
         raise HTTPException(400, "檔案未能抽取到文字。掃描PDF需要先做OCR。")
 
+    period = (historical_period or "").strip()[:120] or None
+    metrics = document_metrics(
+        text,
+        actual_pages=actual_page_count(file.filename or "upload.txt", content),
+    )
     project = Project(
         title=title or Path(file.filename or "Untitled").stem,
         filename=file.filename or "upload",
-        historical_year=historical_year,
+        historical_year=numeric_year_from_period(period),
+        historical_period=period,
         raw_text=text,
         stage="uploaded",
     )
@@ -115,15 +124,16 @@ async def upload_project(
     db.commit()
     db.refresh(project)
     return {"id": project.id, "title": project.title, "filename": project.filename,
-            "historical_year": project.historical_year, "stage": project.stage,
-            "text_chars": len(project.raw_text)}
+            "historical_year": project.historical_year,
+            "historical_period": project.historical_period,
+            "stage": project.stage, "text_chars": len(project.raw_text), **metrics}
 
 
 @app.post("/api/projects/{project_id}/extract")
 def run_extraction(project_id: int, db: Session = Depends(get_db)):
     project = project_or_404(db, project_id)
     try:
-        result = extract_places_with_gemini(project.raw_text)
+        result = extract_places_with_gemini(project.raw_text, project.historical_period)
     except Exception as e:
         raise HTTPException(502, f"Gemini extraction failed: {e}")
 
@@ -142,7 +152,7 @@ def run_extraction(project_id: int, db: Session = Depends(get_db)):
             normalized_name=(item.normalized_name or item.original_name).strip(),
             date_text=item.date_text,
             sentence=item.sentence,
-            route_role=item.route_role,
+            route_role=normalize_route_role(item.route_role),
             place_type=item.place_type,
             historical_region=item.historical_region,
             confidence=item.confidence,
@@ -158,7 +168,9 @@ def run_extraction(project_id: int, db: Session = Depends(get_db)):
 def get_project(project_id: int, db: Session = Depends(get_db)):
     p = project_or_404(db, project_id)
     return {"id": p.id, "title": p.title, "filename": p.filename,
-            "historical_year": p.historical_year, "stage": p.stage,
+            "historical_year": p.historical_year,
+            "historical_period": p.historical_period,
+            "stage": p.stage,
             "places_confirmed": p.places_confirmed}
 
 
@@ -197,6 +209,8 @@ def create_place(project_id: int, payload: PlaceCreate, db: Session = Depends(ge
 def update_place(place_id: int, payload: PlaceUpdate, db: Session = Depends(get_db)):
     p = place_or_404(db, place_id)
     data = payload.model_dump(exclude_unset=True)
+    if data.get("route_role") is None and "route_role" in data:
+        raise HTTPException(422, "經過／提及不可留空。")
     coordinate_change = "selected_lon" in data or "selected_lat" in data
     for k, v in data.items():
         setattr(p, k, v)
@@ -225,10 +239,22 @@ def confirm_places(project_id: int, db: Session = Depends(get_db)):
     count = db.query(Place).filter(Place.project_id == project_id, Place.active == True).count()
     if count == 0:
         raise HTTPException(400, "沒有地名可確認。")
+    selected_count = db.query(Place).filter(
+        Place.project_id == project_id,
+        Place.active == True,
+        Place.route_role.in_(MAPPED_ROUTE_ROLES),
+    ).count()
+    if selected_count == 0:
+        raise HTTPException(400, "請至少把一個地名選為「經過」或「經過及提及」。")
     project.places_confirmed = True
     project.stage = "places_confirmed"
     db.commit()
-    return {"ok": True, "count": count}
+    return {
+        "ok": True,
+        "count": count,
+        "selected_count": selected_count,
+        "mentioned_count": count - selected_count,
+    }
 
 
 @app.post("/api/projects/{project_id}/unconfirm-places")

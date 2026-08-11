@@ -8,13 +8,18 @@ from .schemas import PlaceExtraction
 PROMPT_PATH = Path(__file__).resolve().parent.parent / "prompts" / "extract_places.txt"
 
 
-def extract_places_with_gemini(text: str) -> PlaceExtraction:
+def extract_places_with_gemini(text: str, historical_period: str | None = None) -> PlaceExtraction:
     api_key = os.getenv("GEMINI_API_KEY")
     if not api_key:
         raise RuntimeError("GEMINI_API_KEY 未設定。")
 
     client = genai.Client(api_key=api_key)
     prompt = PROMPT_PATH.read_text(encoding="utf-8")
+    if historical_period:
+        prompt += (
+            "\n\nDocument context supplied by the user: "
+            f"年份／朝代 = {historical_period}. Use this only as dating context."
+        )
     model = os.getenv("GEMINI_MODEL", "gemini-3.5-flash-lite")
 
     # Structured Outputs: one extraction stage, one schema.

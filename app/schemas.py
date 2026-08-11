@@ -1,4 +1,9 @@
-from pydantic import BaseModel, Field
+from typing import Literal
+
+from pydantic import BaseModel, ConfigDict, Field
+
+
+RouteRole = Literal["passed", "mentioned_only", "passed_and_mentioned"]
 
 
 class ExtractedPlace(BaseModel):
@@ -7,7 +12,7 @@ class ExtractedPlace(BaseModel):
     normalized_name: str
     date_text: str | None = None
     sentence: str
-    route_role: str
+    route_role: RouteRole
     place_type: str | None = None
     historical_region: str | None = None
     confidence: float = Field(ge=0, le=1)
@@ -18,18 +23,12 @@ class PlaceExtraction(BaseModel):
 
 
 class PlaceUpdate(BaseModel):
-    route_order: int | None = None
-    original_name: str | None = None
-    normalized_name: str | None = None
-    date_text: str | None = None
-    sentence: str | None = None
-    route_role: str | None = None
-    place_type: str | None = None
+    model_config = ConfigDict(extra="forbid")
+
+    route_role: RouteRole | None = None
     historical_region: str | None = None
-    confidence: float | None = Field(default=None, ge=0, le=1)
     selected_lon: float | None = None
     selected_lat: float | None = None
-    active: bool | None = None
 
 
 class PlaceCreate(BaseModel):
@@ -38,7 +37,7 @@ class PlaceCreate(BaseModel):
     normalized_name: str | None = None
     date_text: str | None = None
     sentence: str = ""
-    route_role: str = "uncertain"
+    route_role: RouteRole = "passed"
     place_type: str | None = None
     historical_region: str | None = None
     confidence: float = 1.0

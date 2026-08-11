@@ -35,7 +35,7 @@
     <nav class="progress" aria-label="Workflow progress">
       <div class="progress-step active" data-step="1"><span>1</span><div><strong>上載</strong><small>加入文本</small></div></div>
       <div class="progress-line"></div>
-      <div class="progress-step" data-step="2"><span>2</span><div><strong>校訂</strong><small>確認地名</small></div></div>
+      <div class="progress-step" data-step="2"><span>2</span><div><strong>抽取</strong><small>選擇地名</small></div></div>
       <div class="progress-line"></div>
       <div class="progress-step" data-step="3"><span>3</span><div><strong>配對</strong><small>檢視坐標</small></div></div>
       <div class="progress-line"></div>
@@ -49,7 +49,7 @@
       </div>
       <form id="uploadForm" class="upload-grid">
         <label>研究名稱<input id="title" name="title" placeholder="例如：徐霞客浙遊日記" autocomplete="off" /></label>
-        <label class="year-field">歷史年份 <span>選填</span><input id="year" name="historical_year" type="number" placeholder="1636" /></label>
+        <label class="period-field">年份／朝代 <span>選填</span><input id="period" name="historical_period" type="text" placeholder="例如：1636、明朝或崇禎九年" autocomplete="off" /></label>
         <label class="file-field">文本檔案<input id="file" name="file" type="file" accept=".txt,.md,.docx,.pdf" required /><span id="fileName">選擇檔案</span><small>掃描式 PDF 請先完成 OCR</small></label>
         <div class="form-actions">
           <button type="submit" id="uploadBtn">上載文本</button>
@@ -57,23 +57,28 @@
         </div>
       </form>
       <div class="status" id="uploadStatus" aria-live="polite"></div>
+      <p class="document-metrics hidden" id="documentMetrics" aria-live="polite">
+        <span>總字數 <strong id="wordCount">0</strong></span>
+        <span class="metric-separator" aria-hidden="true">·</span>
+        <span>總頁數 <strong id="pageCount">0</strong></span>
+        <small id="pageCountNote"></small>
+      </p>
     </section>
 
     <section class="step-card hidden" id="step2">
       <div class="step-heading">
-        <div><span class="step-kicker">STEP 02</span><h2>校訂地名</h2></div>
-        <p>更正名稱、順序與路線角色，確認後再查找坐標。</p>
+        <div><span class="step-kicker">STEP 02</span><h2>抽取地名</h2></div>
+        <p>選擇每個地名屬於經過、提及或兩者；「提及」會保留作參考，但不加入路線。</p>
       </div>
       <div class="toolbar">
-        <button id="confirmPlacesBtn" class="button-accent">確認地名並繼續</button>
+        <button id="confirmPlacesBtn" class="button-accent">確認選擇並繼續</button>
         <button id="savePlacesBtn" class="button-secondary">儲存修改</button>
-        <button id="addPlaceBtn" class="button-quiet">＋ 新增地名</button>
         <button id="unconfirmPlacesBtn" class="button-quiet hidden">返回修改</button>
       </div>
       <div class="table-wrap">
-        <table id="placesTable">
+        <table id="placesTable" class="review-table">
           <thead><tr>
-            <th>次序</th><th>原地名</th><th>標準名</th><th>日期</th><th>角色</th><th>歷史區域</th><th>原句</th><th>信心</th><th><span class="sr-only">動作</span></th>
+            <th>次序</th><th>日期</th><th>地名</th><th>經過／提及</th><th>歷史區域</th><th>原句</th>
           </tr></thead>
           <tbody></tbody>
         </table>

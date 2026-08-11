@@ -23,3 +23,10 @@ def extract_text(filename: str, content: bytes) -> str:
         return "\n".join((page.extract_text() or "") for page in reader.pages)
 
     raise ValueError("只支援 .txt、.md、.docx、.pdf（CSV只作純文字讀取）。")
+
+
+def actual_page_count(filename: str, content: bytes) -> int | None:
+    """Return a reliable source page count when the file format provides one."""
+    if Path(filename).suffix.lower() == ".pdf":
+        return len(PdfReader(BytesIO(content)).pages)
+    return None

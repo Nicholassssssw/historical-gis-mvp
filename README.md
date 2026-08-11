@@ -2,20 +2,17 @@
 
 一個可直接部署的研究型 MVP：
 
-**Upload文本 → Gemini一次抽取地名 → 用戶修改/刪減 → 用戶確認 → 多來源經緯度配對 → Generate GeoJSON map file → ArcGIS Maps SDK顯示 → 拖動/刪除點 → 路線自動更新。**
+**Upload文本 → Gemini一次抽取地名 → 用戶選擇經過/提及 → 用戶確認 → 多來源經緯度配對 → Generate GeoJSON map file → ArcGIS Maps SDK顯示 → 拖動/刪除點 → 路線自動更新。**
 
 ## 1. 已實作流程
 
-1. 網站上載 `.txt / .md / .docx / .pdf`
-2. Backend 抽取文字
+1. 網站上載 `.txt / .md / .docx / .pdf`，可填寫年份／朝代
+2. Backend 抽取文字，顯示總字數及頁數（非 PDF 檔案按字數估算頁數）
 3. Gemini API + Structured Outputs，一個 extraction stage 回傳固定地名 schema
-4. 網頁顯示地名 table，用戶可以：
-   - 改地名
-   - 改 route order
-   - 改日期/角色/歷史區域
-   - 新增地名
-   - 刪除地名
-5. 用戶按「確認地名」後才允許 geocoding
+4. 網頁顯示地名 table；次序、日期、地名及原句只讀，用戶可以：
+   - 選擇 `經過`、`提及` 或 `經過及提及`
+   - 修改歷史區域
+5. 用戶按「確認選擇」後才允許 geocoding；`提及` 地名保留在 table，但不加入配對或路線
 6. Geocoder 查詢多個來源並保存所有候選
 7. 系統按名稱吻合、來源權重、跨來源距離一致性分為：
    - `confirmed` = 確認經緯度
@@ -164,7 +161,7 @@ Railway：
 
 ### projects
 
-保存：文件、原文、年份、workflow stage、是否已由用戶確認地名。
+保存：文件、原文、年份／朝代、可供地名來源使用的數字年份、workflow stage、是否已由用戶確認地名。
 
 ### places
 

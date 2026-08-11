@@ -7,7 +7,10 @@ For each place:
 - give a conservative normalized_name only when normalization is obvious; otherwise repeat the original name;
 - preserve the date/day phrase if present;
 - quote the shortest source sentence that supports the extraction;
-- classify route_role as one of: passed, visited, stayed, departed, arrived, mentioned_only, uncertain;
+- classify route_role as exactly one of: passed, mentioned_only, passed_and_mentioned;
+  - passed: the traveller physically passes, visits, stays at, departs from, or arrives at the place;
+  - mentioned_only: the place is discussed or named but is not part of the traveller's physical route;
+  - passed_and_mentioned: the place is both physically encountered and separately discussed or referenced;
 - infer place_type conservatively;
 - infer historical_region only when supported by the text/context; otherwise null;
 - confidence must be between 0 and 1.

@@ -55,17 +55,28 @@ $('#file').addEventListener('change', event => {
 $('#uploadForm').addEventListener('submit', async (e) => {
   e.preventDefault();
   setStatus($('#uploadStatus'), '正在上載並讀取文本…');
+  $('#documentMetrics').classList.add('hidden');
   setBusy($('#uploadBtn'), true, '上載中…');
   const fd = new FormData();
   const f = $('#file').files[0];
-  if (!f) return;
+  if (!f) {
+    setBusy($('#uploadBtn'), false, '上載中…');
+    setStatus($('#uploadStatus'), '請先選擇文本檔案。', true);
+    return;
+  }
   fd.append('file', f);
   if ($('#title').value.trim()) fd.append('title', $('#title').value.trim());
-  if ($('#year').value.trim()) fd.append('historical_year', $('#year').value.trim());
+  if ($('#period').value.trim()) fd.append('historical_period', $('#period').value.trim());
   try {
     const p = await api('/api/projects', {method:'POST', body:fd});
     projectId = p.id;
-    setStatus($('#uploadStatus'), `已加入「${p.filename}」・${p.text_chars.toLocaleString()} 字元。下一步可抽取地名。`);
+    setStatus($('#uploadStatus'), `已加入「${p.filename}」。下一步可抽取地名。`);
+    $('#wordCount').textContent = p.word_count.toLocaleString();
+    $('#pageCount').textContent = p.page_count.toLocaleString();
+    $('#pageCountNote').textContent = p.page_count_estimated
+      ? `按每頁約 ${p.words_per_estimated_page.toLocaleString()} 字估算`
+      : 'PDF 實際頁數';
+    $('#documentMetrics').classList.remove('hidden');
     $('#extractBtn').disabled = false;
   } catch (err) { setStatus($('#uploadStatus'), err.message, true); }
   finally { setBusy($('#uploadBtn'), false, '上載中…'); }
@@ -81,7 +92,7 @@ $('#extractBtn').addEventListener('click', async () => {
     renderPlaces(currentPlaces);
     $('#step2').classList.remove('hidden');
     markStep(2);
-    setStatus($('#uploadStatus'), `已抽取 ${result.count} 個地名。請在下方校訂後確認。`);
+    setStatus($('#uploadStatus'), `已抽取 ${result.count} 個地名。請在下方選擇需要加入路線的地名。`);
     $('#step2').scrollIntoView({behavior:'smooth'});
   } catch (err) {
     setStatus($('#uploadStatus'), err.message, true);
@@ -94,25 +105,17 @@ function renderPlaces(places) {
   const tbody = $('#placesTable tbody');
   tbody.innerHTML = places.map(p => `
     <tr data-id="${p.id}">
-      <td><input data-f="route_order" type="number" min="1" value="${p.route_order}"></td>
-      <td><input data-f="original_name" value="${esc(p.original_name)}"></td>
-      <td><input data-f="normalized_name" value="${esc(p.normalized_name)}"></td>
-      <td><input data-f="date_text" value="${esc(p.date_text)}"></td>
+      <td><span class="readonly-value order-value">${p.route_order}</span></td>
+      <td><span class="readonly-value">${esc(p.date_text || '—')}</span></td>
+      <td><span class="readonly-value place-value">${esc(p.original_name)}</span></td>
       <td><select data-f="route_role">
-        ${['passed','visited','stayed','departed','arrived','mentioned_only','uncertain'].map(x=>`<option ${p.route_role===x?'selected':''}>${x}</option>`).join('')}
+        <option value="passed" ${p.route_role==='passed'?'selected':''}>經過</option>
+        <option value="mentioned_only" ${p.route_role==='mentioned_only'?'selected':''}>提及</option>
+        <option value="passed_and_mentioned" ${p.route_role==='passed_and_mentioned'?'selected':''}>經過及提及</option>
       </select></td>
-      <td><input data-f="historical_region" value="${esc(p.historical_region)}"></td>
-      <td><textarea data-f="sentence">${esc(p.sentence)}</textarea></td>
-      <td><input data-f="confidence" type="number" min="0" max="1" step="0.01" value="${Number(p.confidence ?? 0).toFixed(2)}"></td>
-      <td><button class="delete-place" aria-label="刪除 ${esc(p.original_name)}">刪除</button></td>
+      <td><input data-f="historical_region" value="${esc(p.historical_region)}" placeholder="可修改"></td>
+      <td><span class="readonly-value sentence-value">${esc(p.sentence || '—')}</span></td>
     </tr>`).join('');
-
-  $$('.delete-place').forEach(btn => btn.addEventListener('click', async e => {
-    const tr = e.target.closest('tr');
-    if (!confirm('刪除呢個地名？')) return;
-    try { await api(`/api/places/${tr.dataset.id}`, {method:'DELETE'}); tr.remove(); }
-    catch (err) { alert(err.message); }
-  }));
 }
 
 async function saveAllPlaces() {
@@ -121,9 +124,7 @@ async function saveAllPlaces() {
     const payload = {};
     tr.querySelectorAll('[data-f]').forEach(el => {
       let v = el.value;
-      if (el.dataset.f === 'route_order') v = Number(v);
-      if (el.dataset.f === 'confidence') v = Number(v);
-      if (['date_text','historical_region'].includes(el.dataset.f) && v === '') v = null;
+      if (el.dataset.f === 'historical_region' && v === '') v = null;
       payload[el.dataset.f] = v;
     });
     await api(`/api/places/${tr.dataset.id}`, {method:'PATCH', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload)});
@@ -131,35 +132,19 @@ async function saveAllPlaces() {
   currentPlaces = await api(`/api/projects/${projectId}/places`);
   currentPlaces.sort((a,b)=>a.route_order-b.route_order);
   renderPlaces(currentPlaces);
-  setStatus($('#placesStatus'), `✓ 已儲存 ${currentPlaces.length} 個地名。`);
+  setStatus($('#placesStatus'), `✓ 已儲存 ${currentPlaces.length} 個地名的分類及歷史區域。`);
 }
 
 $('#savePlacesBtn').addEventListener('click', async () => {
   try { await saveAllPlaces(); } catch (err) { setStatus($('#placesStatus'), err.message, true); }
 });
 
-$('#addPlaceBtn').addEventListener('click', async () => {
-  const name = prompt('新增地名：');
-  if (!name) return;
-  try {
-    const places = await api(`/api/projects/${projectId}/places`);
-    const next = places.length ? Math.max(...places.map(p=>p.route_order))+1 : 1;
-    await api(`/api/projects/${projectId}/places`, {
-      method:'POST', headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({route_order:next, original_name:name, normalized_name:name, route_role:'uncertain'})
-    });
-    currentPlaces = await api(`/api/projects/${projectId}/places`);
-    renderPlaces(currentPlaces);
-  } catch (err) { setStatus($('#placesStatus'), err.message, true); }
-});
-
 $('#confirmPlacesBtn').addEventListener('click', async () => {
   try {
     await saveAllPlaces();
     const r = await api(`/api/projects/${projectId}/confirm-places`, {method:'POST'});
-    setStatus($('#placesStatus'), `✓ 用戶已確認 ${r.count} 個地名，可以進行經緯度配對。`);
+    setStatus($('#placesStatus'), `✓ 已選擇 ${r.selected_count} 個路線地名；另有 ${r.mentioned_count} 個提及地名保留作參考。`);
     $('#confirmPlacesBtn').classList.add('hidden');
-    $('#addPlaceBtn').classList.add('hidden');
     $('#unconfirmPlacesBtn').classList.remove('hidden');
     $('#step3').classList.remove('hidden');
     markStep(3);
@@ -171,11 +156,10 @@ $('#unconfirmPlacesBtn').addEventListener('click', async () => {
   try {
     await api(`/api/projects/${projectId}/unconfirm-places`, {method:'POST'});
     $('#confirmPlacesBtn').classList.remove('hidden');
-    $('#addPlaceBtn').classList.remove('hidden');
     $('#unconfirmPlacesBtn').classList.add('hidden');
     $('#step3').classList.add('hidden');
     markStep(2);
-    setStatus($('#placesStatus'), '已取消確認，可以再次修改地名。');
+    setStatus($('#placesStatus'), '已取消確認，可以再次修改分類及歷史區域。');
   } catch (err) { setStatus($('#placesStatus'), err.message, true); }
 });
 
@@ -305,7 +289,7 @@ async function loadMapData() {
   if (!mapState.view) await initMap();
   const places = await api(`/api/projects/${projectId}/places`);
   mapState.pointLayer.removeAll();
-  for (const p of places.filter(p=>p.selected_lon != null && p.selected_lat != null)) {
+  for (const p of places.filter(p=>p.route_role !== 'mentioned_only' && p.selected_lon != null && p.selected_lat != null)) {
     const g = new mapState.Graphic({
       geometry:{type:'point', longitude:p.selected_lon, latitude:p.selected_lat, spatialReference:{wkid:4326}},
       attributes:{place_id:p.id, route_order:p.route_order, name:p.normalized_name, coord_class:p.coord_class, coord_source:p.coord_source},
