@@ -41,11 +41,12 @@ function setBusy(button, busy, busyLabel) {
 async function loadConfig() {
   config = await api('/api/config');
   const provider = $('#providerStatus');
-  provider.classList.toggle('ready', config.gemini_enabled);
-  provider.classList.toggle('warning', !config.gemini_enabled);
-  provider.querySelector('span').textContent = config.gemini_enabled
-    ? `${config.gemini_model} ready`
-    : 'Gemini key needed';
+  provider.classList.toggle('ready', config.extraction_enabled);
+  provider.classList.toggle('warning', !config.extraction_enabled);
+  provider.querySelector('span').textContent = config.extraction_enabled
+    ? `${config.extraction_model} ready`
+    : config.extraction_setup_message;
+  $('#extractBtn').textContent = `用 ${config.extraction_provider_label} 抽取地名`;
 }
 
 $('#file').addEventListener('change', event => {
@@ -84,8 +85,9 @@ $('#uploadForm').addEventListener('submit', async (e) => {
 
 $('#extractBtn').addEventListener('click', async () => {
   if (!projectId) return;
-  setBusy($('#extractBtn'), true, 'Gemini 分析中…');
-  setStatus($('#uploadStatus'), 'Gemini 正在辨識路線地名…');
+  const providerLabel = config.extraction_provider_label || 'AI';
+  setBusy($('#extractBtn'), true, `${providerLabel} 分析中…`);
+  setStatus($('#uploadStatus'), `${providerLabel} 正在辨識路線地名…`);
   try {
     const result = await api(`/api/projects/${projectId}/extract`, {method:'POST'});
     currentPlaces = result.places;
@@ -97,7 +99,7 @@ $('#extractBtn').addEventListener('click', async () => {
   } catch (err) {
     setStatus($('#uploadStatus'), err.message, true);
   } finally {
-    setBusy($('#extractBtn'), false, 'Gemini 分析中…');
+    setBusy($('#extractBtn'), false, `${providerLabel} 分析中…`);
   }
 });
 

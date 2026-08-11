@@ -2,13 +2,13 @@
 
 一個可直接部署的研究型 MVP：
 
-**Upload文本 → Gemini一次抽取地名 → 用戶選擇經過/提及 → 用戶確認 → 多來源經緯度配對 → Generate GeoJSON map file → ArcGIS Maps SDK顯示 → 拖動/刪除點 → 路線自動更新。**
+**Upload文本 → 可切換 LLM 抽取地名 → 用戶選擇經過/提及 → 用戶確認 → 多來源經緯度配對 → Generate GeoJSON map file → ArcGIS Maps SDK顯示 → 拖動/刪除點 → 路線自動更新。**
 
 ## 1. 已實作流程
 
 1. 網站上載 `.txt / .md / .docx / .pdf`，可填寫年份／朝代
 2. Backend 抽取文字，顯示總字數及頁數（非 PDF 檔案按字數估算頁數）
-3. Gemini API + Structured Outputs，一個 extraction stage 回傳固定地名 schema
+3. Vertex AI DeepSeek、Gemini 或 DeepSeek API 經同一個 provider layer 抽取，並回傳固定地名 schema
 4. 網頁顯示地名 table；次序、日期、地名及原句只讀，用戶可以：
    - 選擇 `經過`、`提及` 或 `經過及提及`
    - 修改歷史區域
@@ -84,12 +84,35 @@ ArcGIS 網頁顯示則直接由 database JSON 建 GraphicsLayer，拖點後 rout
 cp .env.example .env
 ```
 
-填入至少：
+預設使用 Google Vertex AI 的 managed DeepSeek V3.2：
 
 ```env
-GEMINI_API_KEY=...
-GEMINI_MODEL=gemini-3.5-flash-lite
+LLM_PROVIDER=google_vertex
+LLM_MODEL=deepseek-ai/deepseek-v3.2-maas
+GOOGLE_CLOUD_PROJECT=your-project-id
+VERTEX_LOCATION=global
 ```
+
+本機使用 Application Default Credentials：
+
+```bash
+gcloud auth application-default login
+gcloud services enable aiplatform.googleapis.com --project=your-project-id
+```
+
+Cloud Run 應使用執行服務帳戶及 IAM，不要把 service-account JSON 放入 repo。
+
+如要切回 Gemini，只需更改設定，不用改程式：
+
+```env
+LLM_PROVIDER=gemini
+LLM_MODEL=gemini-3.5-flash-lite
+GEMINI_API_KEY=...
+```
+
+亦保留直連 DeepSeek API 的 `LLM_PROVIDER=deepseek` 選項。
+
+> 注意：Google Cloud 已於 2026-07-21 將 `deepseek-v3.2-maas` 標示為 deprecated，並列出 2026-10-21 retirement date。Provider/model 分離正是為了日後只改環境變數即可遷移。詳見 [Google Cloud open-model deprecations](https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/deprecations/open-models)。
 
 安裝：
 

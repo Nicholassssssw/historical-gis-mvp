@@ -16,3 +16,5 @@ For each place:
 - confidence must be between 0 and 1.
 
 Do not invent coordinates. Do not collapse separate visits that occur at different positions in the route. Do not silently add places that are not in the text.
+
+Return exactly one JSON object with a top-level "places" array. Each item must contain route_order, original_name, normalized_name, date_text, sentence, route_role, place_type, historical_region, and confidence. Use null for unknown optional values and do not wrap the JSON in Markdown.

@@ -14,7 +14,7 @@ from .db import Base, engine, ensure_compatibility_schema, get_db
 from .models import Candidate, Place, Project
 from .schemas import PlaceCreate, PlaceUpdate
 from .file_parser import actual_page_count, extract_text
-from .extraction import extract_places_with_gemini
+from .extraction import extract_places, extraction_provider_config
 from .geocoder import candidate_to_dict, geocode_project
 from .exporter import project_geojson
 from .place_roles import MAPPED_ROUTE_ROLES, normalize_route_role
@@ -84,11 +84,21 @@ def health():
 
 @app.get("/api/config")
 def config():
+    extraction = extraction_provider_config()
     return {
         "arcgis_api_key": os.getenv("ARCGIS_API_KEY", ""),
         "google_enabled": bool(os.getenv("GOOGLE_MAPS_API_KEY")),
         "gemini_enabled": bool(os.getenv("GEMINI_API_KEY")),
         "gemini_model": os.getenv("GEMINI_MODEL", "gemini-3.5-flash-lite"),
+        "deepseek_enabled": bool(os.getenv("DEEPSEEK_API_KEY")),
+        "deepseek_model": os.getenv("DEEPSEEK_MODEL", "deepseek-v4-flash"),
+        "vertex_enabled": bool(os.getenv("GOOGLE_CLOUD_PROJECT")),
+        "vertex_location": os.getenv("VERTEX_LOCATION", "global"),
+        "ai_provider": extraction["provider"],
+        "extraction_provider_label": extraction["label"],
+        "extraction_enabled": extraction["enabled"],
+        "extraction_model": extraction["model"],
+        "extraction_setup_message": extraction["setup_message"],
     }
 
 
@@ -132,10 +142,11 @@ async def upload_project(
 @app.post("/api/projects/{project_id}/extract")
 def run_extraction(project_id: int, db: Session = Depends(get_db)):
     project = project_or_404(db, project_id)
+    extraction = extraction_provider_config()
     try:
-        result = extract_places_with_gemini(project.raw_text, project.historical_period)
+        result = extract_places(project.raw_text, project.historical_period)
     except Exception as e:
-        raise HTTPException(502, f"Gemini extraction failed: {e}")
+        raise HTTPException(502, f"{extraction['label']} extraction failed: {e}")
 
     db.query(Candidate).filter(Candidate.place_id.in_(
         db.query(Place.id).filter(Place.project_id == project.id)
