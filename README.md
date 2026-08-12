@@ -91,7 +91,11 @@ LLM_PROVIDER=google_vertex
 LLM_MODEL=deepseek-ai/deepseek-v3.2-maas
 GOOGLE_CLOUD_PROJECT=your-project-id
 VERTEX_LOCATION=global
+VERTEX_CHUNK_CHARS=45000
+VERTEX_MAX_RETRIES=2
 ```
+
+長文本會按段落／句界自動分批抽取，再把各批結果合併成全書 route order。Vertex AI 暫時性 `429 / 500 / 503 / 504` 最多自動重試兩次，並遵從 `Retry-After`。
 
 本機使用 Application Default Credentials：
 
@@ -255,7 +259,7 @@ AGREEMENT_RADIUS_KM=5
 ## 11. 重要限制
 
 - 掃描式 PDF 未包含 OCR；先 OCR 再 upload。
-- 長篇書籍第一版會把全文一次交給 extraction stage；production 應做 chunking + deterministic merge，但仍可在 UI 視為「一次抽取流程」。
+- 長篇書籍會自動 chunking + deterministic route-order merge；目前仍由同一 HTTP request 等候全部批次完成，超長書籍下一步應改用 background job queue。
 - 公共 Nominatim 不適合大量 production bulk requests；高流量應 self-host 或用 commercial provider。
 - CHGIS 及其他歷史資料庫各有自己的 license；商業化前要逐項確認。
 - `confirmed` 代表符合目前機器規則/人工確認，並不等於歷史學上的絕對證明。

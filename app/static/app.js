@@ -1,6 +1,7 @@
 let projectId = null;
 let config = {};
 let currentPlaces = [];
+let currentExtractionPlan = null;
 let mapState = { view:null, pointLayer:null, routeLayer:null, sketch:null, selectedGraphic:null };
 
 const $ = (s) => document.querySelector(s);
@@ -71,7 +72,16 @@ $('#uploadForm').addEventListener('submit', async (e) => {
   try {
     const p = await api('/api/projects', {method:'POST', body:fd});
     projectId = p.id;
-    setStatus($('#uploadStatus'), `已加入「${p.filename}」。下一步可抽取地名。`);
+    const chunkChars = config.vertex_chunk_chars || 45000;
+    const chunkCount = config.ai_provider === 'google_vertex'
+      ? Math.max(1, Math.ceil(p.text_chars / chunkChars))
+      : 1;
+    const estimatedInputTokens = p.text_chars + chunkCount * 2600;
+    currentExtractionPlan = {chunkCount, estimatedInputTokens};
+    const planNote = chunkCount > 1
+      ? ` 文件較長，會分 ${chunkCount} 批處理；中文 input 粗估約 ${estimatedInputTokens.toLocaleString()} tokens，回傳結果另計。`
+      : '';
+    setStatus($('#uploadStatus'), `已加入「${p.filename}」。下一步可抽取地名。${planNote}`);
     $('#wordCount').textContent = p.word_count.toLocaleString();
     $('#pageCount').textContent = p.page_count.toLocaleString();
     $('#pageCountNote').textContent = p.page_count_estimated
@@ -87,7 +97,10 @@ $('#extractBtn').addEventListener('click', async () => {
   if (!projectId) return;
   const providerLabel = config.extraction_provider_label || 'AI';
   setBusy($('#extractBtn'), true, `${providerLabel} 分析中…`);
-  setStatus($('#uploadStatus'), `${providerLabel} 正在辨識路線地名…`);
+  const batchNote = currentExtractionPlan?.chunkCount > 1
+    ? `，正按 ${currentExtractionPlan.chunkCount} 批依次處理；長書可能需要較長時間，請勿重複按掣`
+    : '';
+  setStatus($('#uploadStatus'), `${providerLabel} 正在辨識路線地名${batchNote}…`);
   try {
     const result = await api(`/api/projects/${projectId}/extract`, {method:'POST'});
     currentPlaces = result.places;

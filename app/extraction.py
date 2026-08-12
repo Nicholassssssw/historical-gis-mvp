@@ -1,4 +1,6 @@
 import os
+import re
+import time
 from pathlib import Path
 
 import google.auth
@@ -18,6 +20,8 @@ PROVIDER_DEFAULT_MODELS = {
     "deepseek": "deepseek-v4-flash",
     "google_vertex": "deepseek-ai/deepseek-v3.2-maas",
 }
+
+RETRYABLE_VERTEX_STATUS_CODES = {429, 500, 503, 504}
 
 
 def configured_extraction_provider() -> str:
@@ -184,11 +188,117 @@ def _vertex_access_token_and_project() -> tuple[str, str]:
     return credentials.token, project
 
 
+def _split_source_text(text: str, max_chars: int) -> list[str]:
+    """Split long sources near paragraph/sentence boundaries without overlap."""
+    if len(text) <= max_chars:
+        return [text]
+
+    chunks = []
+    start = 0
+    while start < len(text):
+        hard_end = min(start + max_chars, len(text))
+        if hard_end == len(text):
+            end = hard_end
+        else:
+            search_start = start + int(max_chars * 0.65)
+            window = text[search_start:hard_end]
+            break_positions = [
+                window.rfind("\n\n"),
+                window.rfind("\n"),
+            ]
+            sentence_matches = list(re.finditer(r"[。！？；]", window))
+            if sentence_matches:
+                break_positions.append(sentence_matches[-1].end())
+            best = max(break_positions)
+            end = search_start + best if best > 0 else hard_end
+        chunk = text[start:end].strip()
+        if chunk:
+            chunks.append(chunk)
+        start = end
+    return chunks
+
+
+def _vertex_error_message(response) -> str:
+    try:
+        payload = response.json()
+    except (ValueError, AttributeError):
+        payload = None
+
+    error = payload.get("error") if isinstance(payload, dict) else None
+    if isinstance(error, dict):
+        message = error.get("message") or error.get("status")
+        if message:
+            return str(message)
+    if isinstance(error, str) and error:
+        return error
+    if isinstance(payload, dict):
+        message = payload.get("message") or payload.get("detail")
+        if message:
+            return str(message)
+    text = getattr(response, "text", "")
+    return text.strip()[:1000] or "request failed"
+
+
+def _vertex_retry_delay(response, attempt: int) -> float:
+    headers = getattr(response, "headers", {}) or {}
+    retry_after = headers.get("retry-after") or headers.get("Retry-After")
+    try:
+        return max(1.0, float(retry_after))
+    except (TypeError, ValueError):
+        return float(5 * (3 ** attempt))
+
+
+def _post_vertex_json(endpoint: str, payload: dict) -> dict:
+    max_retries = max(0, min(2, int(os.getenv("VERTEX_MAX_RETRIES", "2"))))
+    last_error = None
+    for attempt in range(max_retries + 1):
+        access_token, _ = _vertex_access_token_and_project()
+        try:
+            response = httpx.post(
+                endpoint,
+                headers={
+                    "Authorization": f"Bearer {access_token}",
+                    "Content-Type": "application/json; charset=utf-8",
+                },
+                json=payload,
+                timeout=float(os.getenv("LLM_TIMEOUT_SECONDS", "300")),
+            )
+            if (
+                response.status_code in RETRYABLE_VERTEX_STATUS_CODES
+                and attempt < max_retries
+            ):
+                time.sleep(_vertex_retry_delay(response, attempt))
+                continue
+            response.raise_for_status()
+            return response.json()
+        except httpx.HTTPStatusError as error:
+            message = _vertex_error_message(error.response)
+            last_error = RuntimeError(
+                f"Vertex AI API {error.response.status_code}: {message}"
+            )
+            if (
+                error.response.status_code in RETRYABLE_VERTEX_STATUS_CODES
+                and attempt < max_retries
+            ):
+                time.sleep(_vertex_retry_delay(error.response, attempt))
+                continue
+            raise last_error from error
+        except httpx.HTTPError as error:
+            last_error = RuntimeError(f"Vertex AI connection failed: {error}")
+            if attempt < max_retries:
+                time.sleep(float(5 * (3 ** attempt)))
+                continue
+            raise last_error from error
+        except ValueError as error:
+            raise RuntimeError("Vertex AI 沒有返回合法 JSON response。") from error
+    raise last_error or RuntimeError("Vertex AI request failed.")
+
+
 def extract_places_with_vertex_deepseek(
     text: str,
     historical_period: str | None = None,
 ) -> PlaceExtraction:
-    access_token, project = _vertex_access_token_and_project()
+    _, project = _vertex_access_token_and_project()
     location = os.getenv("VERTEX_LOCATION", "global").strip().lower()
     model = _configured_model("google_vertex")
     hostname = (
@@ -200,48 +310,41 @@ def extract_places_with_vertex_deepseek(
         f"https://{hostname}/v1/projects/{project}/locations/{location}"
         "/endpoints/openapi/chat/completions"
     )
-    user_content = (
-        f"{_extraction_prompt(historical_period)}\n\n"
-        "SOURCE TEXT TO EXTRACT:\n"
-        f"{text}"
-    )
-    payload = {
-        "model": model,
-        "messages": [{"role": "user", "content": user_content}],
-        "response_format": {"type": "json_object"},
-        "temperature": 0.1,
-        "max_tokens": int(os.getenv("LLM_MAX_TOKENS", "32768")),
-        "stream": False,
-    }
-    try:
-        response = httpx.post(
-            endpoint,
-            headers={
-                "Authorization": f"Bearer {access_token}",
-                "Content-Type": "application/json; charset=utf-8",
-            },
-            json=payload,
-            timeout=float(os.getenv("LLM_TIMEOUT_SECONDS", "300")),
-        )
-        response.raise_for_status()
-    except httpx.HTTPStatusError as error:
-        try:
-            message = error.response.json().get("error", {}).get("message")
-        except (ValueError, AttributeError):
-            message = None
-        raise RuntimeError(
-            f"Vertex AI API {error.response.status_code}: {message or 'request failed'}"
-        ) from error
-    except httpx.HTTPError as error:
-        raise RuntimeError(f"Vertex AI connection failed: {error}") from error
+    chunk_chars = max(1000, int(os.getenv("VERTEX_CHUNK_CHARS", "45000")))
+    chunks = _split_source_text(text, chunk_chars)
+    merged_places = []
 
-    try:
-        content = response.json()["choices"][0]["message"]["content"]
-        if not content:
-            raise ValueError("empty content")
-        return PlaceExtraction.model_validate_json(content)
-    except (KeyError, IndexError, TypeError, ValueError) as error:
-        raise RuntimeError("Vertex AI DeepSeek 沒有返回可解析的地名 JSON。") from error
+    for chunk_index, chunk in enumerate(chunks, start=1):
+        user_content = (
+            f"{_extraction_prompt(historical_period)}\n\n"
+            f"SOURCE TEXT TO EXTRACT (chunk {chunk_index} of {len(chunks)}):\n"
+            f"{chunk}"
+        )
+        payload = {
+            "model": model,
+            "messages": [{"role": "user", "content": user_content}],
+            "response_format": {"type": "json_object"},
+            "temperature": 0.1,
+            "max_tokens": int(os.getenv("LLM_MAX_TOKENS", "32768")),
+            "stream": False,
+        }
+        body = _post_vertex_json(endpoint, payload)
+        try:
+            content = body["choices"][0]["message"]["content"]
+            if not content:
+                raise ValueError("empty content")
+            chunk_result = PlaceExtraction.model_validate_json(content)
+        except (KeyError, IndexError, TypeError, ValueError) as error:
+            raise RuntimeError(
+                f"Vertex AI DeepSeek 第 {chunk_index}/{len(chunks)} 部分"
+                "沒有返回可解析的地名 JSON。"
+            ) from error
+
+        for item in sorted(chunk_result.places, key=lambda place: place.route_order):
+            item.route_order = len(merged_places) + 1
+            merged_places.append(item)
+
+    return PlaceExtraction(places=merged_places)
 
 
 def extract_places(text: str, historical_period: str | None = None) -> PlaceExtraction:

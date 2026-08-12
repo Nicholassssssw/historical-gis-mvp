@@ -104,6 +104,7 @@ def config():
         "deepseek_model": os.getenv("DEEPSEEK_MODEL", "deepseek-v4-flash"),
         "vertex_enabled": bool(os.getenv("GOOGLE_CLOUD_PROJECT")),
         "vertex_location": os.getenv("VERTEX_LOCATION", "global"),
+        "vertex_chunk_chars": int(os.getenv("VERTEX_CHUNK_CHARS", "45000")),
         "ai_provider": extraction["provider"],
         "extraction_provider_label": extraction["label"],
         "extraction_enabled": extraction["enabled"],
