@@ -1,3 +1,4 @@
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 from .models import Place, Project
 from .place_roles import MAPPED_ROUTE_ROLES, normalize_route_role
@@ -10,6 +11,8 @@ def project_geojson(db: Session, project: Project):
             Place.project_id == project.id,
             Place.active == True,
             Place.route_role.in_(MAPPED_ROUTE_ROLES),
+            or_(Place.gis_decision == None, Place.gis_decision == "retain"),
+            or_(Place.record_level == None, Place.record_level == "core"),
         )
         .order_by(Place.route_order)
         .all()
@@ -30,6 +33,15 @@ def project_geojson(db: Session, project: Project):
             "route_role": normalize_route_role(p.route_role),
             "place_type": p.place_type,
             "historical_region": p.historical_region,
+            "gis_decision": p.gis_decision,
+            "record_level": p.record_level,
+            "travel_status": p.travel_status,
+            "location_status": p.location_status,
+            "alias_relation": p.alias_relation,
+            "decision_reason": p.decision_reason,
+            "previous_route_place": p.previous_route_place,
+            "next_route_place": p.next_route_place,
+            "adjacency_type": p.adjacency_type,
             "coord_class": p.coord_class,
             "coord_score": p.coord_score,
             "coord_source": p.coord_source,

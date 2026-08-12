@@ -210,7 +210,7 @@ def extract_places_with_vertex_deepseek(
         "messages": [{"role": "user", "content": user_content}],
         "response_format": {"type": "json_object"},
         "temperature": 0.1,
-        "max_tokens": int(os.getenv("LLM_MAX_TOKENS", "8192")),
+        "max_tokens": int(os.getenv("LLM_MAX_TOKENS", "32768")),
         "stream": False,
     }
     try:
@@ -221,7 +221,7 @@ def extract_places_with_vertex_deepseek(
                 "Content-Type": "application/json; charset=utf-8",
             },
             json=payload,
-            timeout=float(os.getenv("LLM_TIMEOUT_SECONDS", "180")),
+            timeout=float(os.getenv("LLM_TIMEOUT_SECONDS", "300")),
         )
         response.raise_for_status()
     except httpx.HTTPStatusError as error:

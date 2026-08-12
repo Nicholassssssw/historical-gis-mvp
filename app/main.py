@@ -6,6 +6,7 @@ from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 load_dotenv()
@@ -56,6 +57,15 @@ def place_dict(p: Place, include_candidates: bool = False):
         "route_role": normalize_route_role(p.route_role),
         "place_type": p.place_type,
         "historical_region": p.historical_region,
+        "gis_decision": p.gis_decision,
+        "record_level": p.record_level,
+        "travel_status": p.travel_status,
+        "location_status": p.location_status,
+        "alias_relation": p.alias_relation,
+        "decision_reason": p.decision_reason,
+        "previous_route_place": p.previous_route_place,
+        "next_route_place": p.next_route_place,
+        "adjacency_type": p.adjacency_type,
         "confidence": p.confidence,
         "selected_lon": p.selected_lon,
         "selected_lat": p.selected_lat,
@@ -166,6 +176,15 @@ def run_extraction(project_id: int, db: Session = Depends(get_db)):
             route_role=normalize_route_role(item.route_role),
             place_type=item.place_type,
             historical_region=item.historical_region,
+            gis_decision=item.gis_decision,
+            record_level=item.record_level,
+            travel_status=item.travel_status,
+            location_status=item.location_status,
+            alias_relation=item.alias_relation,
+            decision_reason=item.decision_reason,
+            previous_route_place=item.previous_route_place,
+            next_route_place=item.next_route_place,
+            adjacency_type=item.adjacency_type,
             confidence=item.confidence,
             active=True,
         ))
@@ -207,6 +226,15 @@ def create_place(project_id: int, payload: PlaceCreate, db: Session = Depends(ge
         route_role=payload.route_role,
         place_type=payload.place_type,
         historical_region=payload.historical_region,
+        gis_decision=payload.gis_decision,
+        record_level=payload.record_level,
+        travel_status=payload.travel_status,
+        location_status=payload.location_status,
+        alias_relation=payload.alias_relation,
+        decision_reason=payload.decision_reason,
+        previous_route_place=payload.previous_route_place,
+        next_route_place=payload.next_route_place,
+        adjacency_type=payload.adjacency_type,
         confidence=payload.confidence,
         active=True,
     )
@@ -254,6 +282,8 @@ def confirm_places(project_id: int, db: Session = Depends(get_db)):
         Place.project_id == project_id,
         Place.active == True,
         Place.route_role.in_(MAPPED_ROUTE_ROLES),
+        or_(Place.gis_decision == None, Place.gis_decision == "retain"),
+        or_(Place.record_level == None, Place.record_level == "core"),
     ).count()
     if selected_count == 0:
         raise HTTPException(400, "請至少把一個地名選為「經過」或「經過及提及」。")
