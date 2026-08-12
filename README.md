@@ -92,10 +92,12 @@ LLM_MODEL=deepseek-ai/deepseek-v3.2-maas
 GOOGLE_CLOUD_PROJECT=your-project-id
 VERTEX_LOCATION=global
 VERTEX_CHUNK_CHARS=45000
+VERTEX_WORDS_PER_READ=40000
+VERTEX_PROMPT_TOKENS_PER_READ=2600
 VERTEX_MAX_RETRIES=2
 ```
 
-長文本會按段落／句界自動分批抽取，再把各批結果合併成全書 route order。Vertex AI 暫時性 `429 / 500 / 503 / 504` 最多自動重試兩次，並遵從 `Retry-After`。
+上載後，backend 會先完成字數統計，再按每次最多約 40,000 字及 45,000 字元硬上限決定實際閱讀次數；長文本會按段落／句界自動分批抽取，再把各批結果合併成全書 route order。Vertex AI 暫時性 `429 / 500 / 503 / 504` 最多自動重試兩次，並遵從 `Retry-After`。
 
 本機使用 Application Default Credentials：
 

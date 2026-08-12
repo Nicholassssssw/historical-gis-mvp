@@ -15,7 +15,7 @@ from .db import Base, engine, ensure_compatibility_schema, get_db
 from .models import Candidate, Place, Project
 from .schemas import PlaceCreate, PlaceUpdate
 from .file_parser import actual_page_count, extract_text
-from .extraction import extract_places, extraction_provider_config
+from .extraction import extract_places, extraction_provider_config, vertex_extraction_plan
 from .geocoder import candidate_to_dict, geocode_project
 from .exporter import project_geojson
 from .place_roles import MAPPED_ROUTE_ROLES, normalize_route_role
@@ -104,7 +104,6 @@ def config():
         "deepseek_model": os.getenv("DEEPSEEK_MODEL", "deepseek-v4-flash"),
         "vertex_enabled": bool(os.getenv("GOOGLE_CLOUD_PROJECT")),
         "vertex_location": os.getenv("VERTEX_LOCATION", "global"),
-        "vertex_chunk_chars": int(os.getenv("VERTEX_CHUNK_CHARS", "45000")),
         "ai_provider": extraction["provider"],
         "extraction_provider_label": extraction["label"],
         "extraction_enabled": extraction["enabled"],
@@ -133,6 +132,7 @@ async def upload_project(
         text,
         actual_pages=actual_page_count(file.filename or "upload.txt", content),
     )
+    extraction_plan = vertex_extraction_plan(text, metrics["word_count"])
     project = Project(
         title=title or Path(file.filename or "Untitled").stem,
         filename=file.filename or "upload",
@@ -147,7 +147,8 @@ async def upload_project(
     return {"id": project.id, "title": project.title, "filename": project.filename,
             "historical_year": project.historical_year,
             "historical_period": project.historical_period,
-            "stage": project.stage, "text_chars": len(project.raw_text), **metrics}
+            "stage": project.stage, "text_chars": len(project.raw_text),
+            "extraction_plan": extraction_plan, **metrics}
 
 
 @app.post("/api/projects/{project_id}/extract")

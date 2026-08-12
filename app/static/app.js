@@ -72,21 +72,16 @@ $('#uploadForm').addEventListener('submit', async (e) => {
   try {
     const p = await api('/api/projects', {method:'POST', body:fd});
     projectId = p.id;
-    const chunkChars = config.vertex_chunk_chars || 45000;
-    const chunkCount = config.ai_provider === 'google_vertex'
-      ? Math.max(1, Math.ceil(p.text_chars / chunkChars))
-      : 1;
-    const estimatedInputTokens = p.text_chars + chunkCount * 2600;
-    currentExtractionPlan = {chunkCount, estimatedInputTokens};
-    const planNote = chunkCount > 1
-      ? ` 文件較長，會分 ${chunkCount} 批處理；中文 input 粗估約 ${estimatedInputTokens.toLocaleString()} tokens，回傳結果另計。`
-      : '';
-    setStatus($('#uploadStatus'), `已加入「${p.filename}」。下一步可抽取地名。${planNote}`);
+    currentExtractionPlan = p.extraction_plan;
+    setStatus($('#uploadStatus'), `已加入「${p.filename}」。下一步可抽取地名。`);
     $('#wordCount').textContent = p.word_count.toLocaleString();
     $('#pageCount').textContent = p.page_count.toLocaleString();
     $('#pageCountNote').textContent = p.page_count_estimated
       ? `按每頁約 ${p.words_per_estimated_page.toLocaleString()} 字估算`
       : 'PDF 實際頁數';
+    $('#readCount').textContent = p.extraction_plan.read_count.toLocaleString();
+    $('#wordsPerRead').textContent = p.extraction_plan.words_per_read.toLocaleString();
+    $('#estimatedInputTokens').textContent = p.extraction_plan.estimated_input_tokens.toLocaleString();
     $('#documentMetrics').classList.remove('hidden');
     $('#extractBtn').disabled = false;
   } catch (err) { setStatus($('#uploadStatus'), err.message, true); }
@@ -97,8 +92,8 @@ $('#extractBtn').addEventListener('click', async () => {
   if (!projectId) return;
   const providerLabel = config.extraction_provider_label || 'AI';
   setBusy($('#extractBtn'), true, `${providerLabel} 分析中…`);
-  const batchNote = currentExtractionPlan?.chunkCount > 1
-    ? `，正按 ${currentExtractionPlan.chunkCount} 批依次處理；長書可能需要較長時間，請勿重複按掣`
+  const batchNote = currentExtractionPlan?.read_count > 1
+    ? `，正按 ${currentExtractionPlan.read_count} 次依次閱讀；長書可能需要較長時間，請勿重複按掣`
     : '';
   setStatus($('#uploadStatus'), `${providerLabel} 正在辨識路線地名${batchNote}…`);
   try {

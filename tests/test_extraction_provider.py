@@ -171,6 +171,27 @@ def test_long_vertex_source_is_chunked_and_route_order_is_merged(monkeypatch):
     assert "chunk 1 of 3" in calls[0]["messages"][0]["content"]
 
 
+def test_vertex_read_plan_uses_completed_word_count(monkeypatch):
+    monkeypatch.setenv("VERTEX_WORDS_PER_READ", "40000")
+    monkeypatch.setenv("VERTEX_CHUNK_CHARS", "45000")
+
+    plan = extraction.vertex_extraction_plan("山" * 100000, word_count=100000)
+
+    assert plan["read_count"] >= 3
+    assert plan["words_per_read"] == 40000
+    assert plan["target_chunk_chars"] <= 45000
+    assert plan["estimated_input_tokens"] == 100000 + plan["read_count"] * 2600
+
+
+def test_vertex_read_plan_keeps_short_document_to_one_read(monkeypatch):
+    monkeypatch.setenv("VERTEX_WORDS_PER_READ", "40000")
+    monkeypatch.setenv("VERTEX_CHUNK_CHARS", "45000")
+
+    plan = extraction.vertex_extraction_plan("初一經臨安。", word_count=6)
+
+    assert plan["read_count"] == 1
+
+
 def test_vertex_429_retries_and_surfaces_google_message(monkeypatch):
     calls = 0
     sleeps = []

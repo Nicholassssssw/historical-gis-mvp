@@ -11,6 +11,7 @@ from google.auth.transport.requests import Request as GoogleAuthRequest
 from google.genai import types
 
 from .schemas import PlaceExtraction
+from .text_metrics import count_words
 
 PROMPT_PATH = Path(__file__).resolve().parent.parent / "prompts" / "extract_places.txt"
 
@@ -215,7 +216,41 @@ def _split_source_text(text: str, max_chars: int) -> list[str]:
         if chunk:
             chunks.append(chunk)
         start = end
+    if (
+        len(chunks) > 1
+        and len(chunks[-1]) < max_chars * 0.2
+        and len(chunks[-2]) + len(chunks[-1]) + 1 <= max_chars
+    ):
+        chunks[-2] = f"{chunks[-2]}\n{chunks[-1]}"
+        chunks.pop()
     return chunks
+
+
+def vertex_extraction_plan(text: str, word_count: int | None = None) -> dict:
+    """Plan model reads after upload metrics are known; extraction uses the same plan."""
+    words = count_words(text) if word_count is None else word_count
+    words_per_read = max(1000, int(os.getenv("VERTEX_WORDS_PER_READ", "40000")))
+    hard_chunk_chars = max(1000, int(os.getenv("VERTEX_CHUNK_CHARS", "45000")))
+    reads_by_words = max(1, (words + words_per_read - 1) // words_per_read)
+    reads_by_chars = max(1, (len(text) + hard_chunk_chars - 1) // hard_chunk_chars)
+    minimum_read_count = max(reads_by_words, reads_by_chars)
+    target_chunk_chars = min(
+        hard_chunk_chars,
+        max(1000, (len(text) + minimum_read_count - 1) // minimum_read_count),
+    )
+    read_count = len(_split_source_text(text, target_chunk_chars))
+    estimated_source_tokens = max(words, (len(text) + 3) // 4)
+    estimated_prompt_tokens_per_read = int(
+        os.getenv("VERTEX_PROMPT_TOKENS_PER_READ", "2600")
+    )
+    return {
+        "read_count": read_count,
+        "words_per_read": words_per_read,
+        "target_chunk_chars": target_chunk_chars,
+        "estimated_input_tokens": (
+            estimated_source_tokens + read_count * estimated_prompt_tokens_per_read
+        ),
+    }
 
 
 def _vertex_error_message(response) -> str:
@@ -310,8 +345,8 @@ def extract_places_with_vertex_deepseek(
         f"https://{hostname}/v1/projects/{project}/locations/{location}"
         "/endpoints/openapi/chat/completions"
     )
-    chunk_chars = max(1000, int(os.getenv("VERTEX_CHUNK_CHARS", "45000")))
-    chunks = _split_source_text(text, chunk_chars)
+    plan = vertex_extraction_plan(text)
+    chunks = _split_source_text(text, plan["target_chunk_chars"])
     merged_places = []
 
     for chunk_index, chunk in enumerate(chunks, start=1):
