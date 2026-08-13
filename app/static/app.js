@@ -115,6 +115,7 @@ function renderPlaces(places) {
   const tbody = $('#placesTable tbody');
   tbody.innerHTML = places.map(p => `
     <tr data-id="${p.id}">
+      <td class="selection-cell"><input class="place-row-check" type="checkbox" aria-label="選擇 ${esc(p.original_name)}"></td>
       <td><span class="readonly-value order-value">${p.route_order}</span></td>
       <td><span class="readonly-value">${esc(p.date_text || '—')}</span></td>
       <td><span class="readonly-value place-value">${esc(p.original_name)}</span></td>
@@ -125,8 +126,84 @@ function renderPlaces(places) {
       </select></td>
       <td><input data-f="historical_region" value="${esc(p.historical_region)}" placeholder="可修改"></td>
       <td><span class="readonly-value sentence-value">${esc(p.sentence || '—')}</span></td>
+      <td class="delete-cell"><button type="button" class="row-delete-button" data-action="delete-place" aria-label="刪除 ${esc(p.original_name)}">刪除</button></td>
     </tr>`).join('');
+  updatePlaceSelectionState();
 }
+
+function placeRows() {
+  return $$('#placesTable tbody tr');
+}
+
+function updatePlaceSelectionState() {
+  const master = $('#selectAllPlaces');
+  const checks = $$('.place-row-check');
+  const checkedCount = checks.filter(check => check.checked).length;
+  master.checked = checks.length > 0 && checkedCount === checks.length;
+  master.indeterminate = checkedCount > 0 && checkedCount < checks.length;
+}
+
+$('#selectAllPlaces').addEventListener('change', event => {
+  $$('.place-row-check').forEach(check => { check.checked = event.target.checked; });
+  updatePlaceSelectionState();
+});
+
+$('#placesTable tbody').addEventListener('change', event => {
+  if (event.target.classList.contains('place-row-check')) updatePlaceSelectionState();
+});
+
+async function bulkSetRouteRole(routeRole, label) {
+  if (!projectId) return;
+  const checkedRows = placeRows().filter(row => row.querySelector('.place-row-check').checked);
+  const targetRows = checkedRows.length ? checkedRows : placeRows();
+  if (!targetRows.length) {
+    setStatus($('#placesStatus'), '目前沒有地名可更新。', true);
+    return;
+  }
+  const payload = {route_role: routeRole};
+  if (checkedRows.length) payload.place_ids = checkedRows.map(row => Number(row.dataset.id));
+  const buttons = [$('#bulkPassedBtn'), $('#bulkMentionedBtn')];
+  buttons.forEach(button => { button.disabled = true; });
+  try {
+    const result = await api(`/api/projects/${projectId}/places/route-role`, {
+      method:'PATCH',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify(payload),
+    });
+    const targetIds = new Set(targetRows.map(row => Number(row.dataset.id)));
+    currentPlaces.forEach(place => {
+      if (targetIds.has(place.id)) place.route_role = routeRole;
+    });
+    renderPlaces(currentPlaces);
+    const scope = checkedRows.length ? '已勾選的' : '全部';
+    setStatus($('#placesStatus'), `✓ 已將${scope} ${result.updated} 個地名設為「${label}」。`);
+  } catch (err) {
+    setStatus($('#placesStatus'), err.message, true);
+  } finally {
+    buttons.forEach(button => { button.disabled = false; });
+  }
+}
+
+$('#bulkPassedBtn').addEventListener('click', () => bulkSetRouteRole('passed', '經過'));
+$('#bulkMentionedBtn').addEventListener('click', () => bulkSetRouteRole('mentioned_only', '提及'));
+
+$('#placesTable tbody').addEventListener('click', async event => {
+  const button = event.target.closest('[data-action="delete-place"]');
+  if (!button) return;
+  const row = button.closest('tr');
+  const place = currentPlaces.find(item => item.id === Number(row.dataset.id));
+  if (!window.confirm(`確定刪除「${place?.original_name || '這個地名'}」？`)) return;
+  button.disabled = true;
+  try {
+    await api(`/api/places/${row.dataset.id}`, {method:'DELETE'});
+    currentPlaces = currentPlaces.filter(item => item.id !== Number(row.dataset.id));
+    renderPlaces(currentPlaces);
+    setStatus($('#placesStatus'), `✓ 已刪除「${place?.original_name || '地名'}」。`);
+  } catch (err) {
+    button.disabled = false;
+    setStatus($('#placesStatus'), err.message, true);
+  }
+});
 
 async function saveAllPlaces() {
   const rows = $$('#placesTable tbody tr');

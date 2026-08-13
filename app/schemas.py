@@ -49,6 +49,13 @@ class PlaceUpdate(BaseModel):
     selected_lat: float | None = None
 
 
+class PlaceBulkRouteRoleUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    route_role: RouteRole
+    place_ids: list[int] | None = None
+
+
 class PlaceCreate(BaseModel):
     route_order: int
     original_name: str

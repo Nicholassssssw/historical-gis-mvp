@@ -81,7 +81,21 @@
       <div class="table-wrap">
         <table id="placesTable" class="review-table">
           <thead><tr>
-            <th>次序</th><th>日期</th><th>地名</th><th>經過／提及</th><th>歷史區域</th><th>原句</th>
+            <th class="selection-column">
+              <label class="table-select-all" for="selectAllPlaces">
+                <input id="selectAllPlaces" type="checkbox">
+                <span>全選</span>
+              </label>
+            </th>
+            <th>次序</th><th>日期</th><th>地名</th>
+            <th class="role-column">
+              <span>經過／提及</span>
+              <span class="bulk-role-actions">
+                <button id="bulkPassedBtn" type="button">全部經過</button>
+                <button id="bulkMentionedBtn" type="button">全部提及</button>
+              </span>
+            </th>
+            <th>歷史區域</th><th>原句</th><th class="delete-column">刪除</th>
           </tr></thead>
           <tbody></tbody>
         </table>

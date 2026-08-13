@@ -98,12 +98,25 @@ th { position: sticky; top: 0; z-index: 2; padding-top: 11px; padding-bottom: 11
 tr:last-child td { border-bottom: 0; }
 tbody tr:hover { background: #fbfcf9; }
 td input, td select, td textarea { padding: 8px; }
-.review-table { min-width: 920px; table-layout: fixed; }
-.review-table th:nth-child(1) { width: 58px; }
-.review-table th:nth-child(2) { width: 120px; }
-.review-table th:nth-child(3) { width: 140px; }
-.review-table th:nth-child(4) { width: 150px; }
-.review-table th:nth-child(5) { width: 170px; }
+.review-table { min-width: 1120px; table-layout: fixed; }
+.review-table th:nth-child(1) { width: 64px; }
+.review-table th:nth-child(2) { width: 58px; }
+.review-table th:nth-child(3) { width: 120px; }
+.review-table th:nth-child(4) { width: 140px; }
+.review-table th:nth-child(5) { width: 190px; }
+.review-table th:nth-child(6) { width: 170px; }
+.review-table th:nth-child(8) { width: 74px; }
+.table-select-all { width: max-content; flex-direction: row; align-items: center; gap: 5px; color: #63706c; font-size: 10px; cursor: pointer; }
+.table-select-all input, .place-row-check { width: 16px; min-width: 16px; height: 16px; margin: 0; padding: 0; accent-color: var(--accent); cursor: pointer; }
+.table-select-all > span { color: inherit; font-weight: 750; }
+.selection-cell, .delete-cell { padding-top: 17px; text-align: center; }
+.role-column > span:first-child { display: block; margin-bottom: 7px; }
+.bulk-role-actions { display: flex; gap: 5px; }
+.bulk-role-actions button, .row-delete-button { min-height: 27px; padding: 5px 7px; border-radius: 7px; font-size: 10px; letter-spacing: 0; text-transform: none; }
+.bulk-role-actions button { color: #315b53; border-color: #cddbd6; background: #fff; }
+.bulk-role-actions button:hover:not(:disabled) { background: #edf7f3; }
+.row-delete-button { color: var(--danger); border-color: #edd1cc; background: #fff8f6; }
+.row-delete-button:hover:not(:disabled) { background: #ffede9; }
 .readonly-value { display: block; padding: 8px 3px; color: #4a5753; line-height: 1.5; }
 .order-value { color: var(--muted); font-variant-numeric: tabular-nums; }
 .place-value { color: var(--ink); font-weight: 750; }

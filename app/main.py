@@ -14,7 +14,7 @@ load_dotenv()
 
 from .db import Base, engine, ensure_compatibility_schema, get_db
 from .models import Candidate, Place, Project
-from .schemas import ExtractedPlace, PlaceCreate, PlaceUpdate
+from .schemas import ExtractedPlace, PlaceBulkRouteRoleUpdate, PlaceCreate, PlaceUpdate
 from .file_parser import actual_page_count, extract_text
 from .extraction import (
     _split_source_text,
@@ -281,6 +281,24 @@ def list_places(project_id: int, candidates: bool = False, db: Session = Depends
     project_or_404(db, project_id)
     rows = db.query(Place).filter(Place.project_id == project_id, Place.active == True).order_by(Place.route_order).all()
     return [place_dict(p, include_candidates=candidates) for p in rows]
+
+
+@app.patch("/api/projects/{project_id}/places/route-role")
+def bulk_update_place_route_role(
+    project_id: int,
+    payload: PlaceBulkRouteRoleUpdate,
+    db: Session = Depends(get_db),
+):
+    project_or_404(db, project_id)
+    query = db.query(Place).filter(Place.project_id == project_id, Place.active == True)
+    if payload.place_ids is not None:
+        place_ids = list(dict.fromkeys(payload.place_ids))
+        if not place_ids:
+            raise HTTPException(400, "請至少選擇一個地名。")
+        query = query.filter(Place.id.in_(place_ids))
+    updated = query.update({Place.route_role: payload.route_role}, synchronize_session=False)
+    db.commit()
+    return {"ok": True, "updated": updated, "route_role": payload.route_role}
 
 
 @app.post("/api/projects/{project_id}/places")
