@@ -228,13 +228,23 @@ def run_extraction(project_id: int, db: Session = Depends(get_db)):
             f"{extraction['label']} extraction failed: {e}.{progress}",
         )
 
+    # Respect model order but normalize to a stable 1..N sequence for editing/routing.
+    extracted = sorted(result.places, key=lambda x: x.route_order)
+    if not extracted:
+        project.stage = "uploaded"
+        project.extraction_completed_reads = 0
+        project.extraction_partial_json = None
+        db.commit()
+        raise HTTPException(
+            502,
+            "AI 沒有抽取到任何地名，系統未將空白結果當作完成。請再次按抽取重試。",
+        )
+
     db.query(Candidate).filter(Candidate.place_id.in_(
         db.query(Place.id).filter(Place.project_id == project.id)
     )).delete(synchronize_session=False)
     db.query(Place).filter(Place.project_id == project.id).delete(synchronize_session=False)
 
-    # Respect model order but normalize to a stable 1..N sequence for editing/routing.
-    extracted = sorted(result.places, key=lambda x: x.route_order)
     for idx, item in enumerate(extracted, start=1):
         db.add(Place(
             project_id=project.id,

@@ -295,3 +295,11 @@ def test_vertex_error_message_reads_google_error_body():
     )
 
     assert extraction._vertex_error_message(response) == "Dynamic shared quota exhausted"
+
+
+def test_extraction_prompt_keeps_places_from_research_documents():
+    prompt = extraction._extraction_prompt("明朝")
+
+    assert "研究論文、學位論文、目錄、註釋" in prompt
+    assert "places 不得回傳空陣列" in prompt
+    assert "年份／朝代 = 明朝" in prompt

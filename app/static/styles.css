@@ -106,13 +106,18 @@ td input, td select, td textarea { padding: 8px; }
 .review-table th:nth-child(4) { width: 220px; }
 .review-table th:nth-child(5) { width: 170px; }
 .review-table th:nth-child(7) { width: 74px; }
-.role-column .column-title { display: block; margin-bottom: 7px; }
-.role-header-control, .row-role-control { display: flex; align-items: center; gap: 8px; }
-.role-header-control select, .row-role-control select { flex: 1; min-width: 0; }
-.role-header-control select { padding: 6px 8px; font-size: 11px; }
-.role-master-toggle { width: max-content; flex-direction: row; align-items: center; gap: 4px; color: #63706c; font-size: 10px; cursor: pointer; white-space: nowrap; }
-.role-master-toggle input, .place-row-check { width: 16px; min-width: 16px; height: 16px; margin: 0; padding: 0; accent-color: var(--accent); cursor: pointer; }
-.role-master-toggle > span { color: inherit; font-weight: 750; }
+.row-role-control { display: flex; align-items: center; gap: 8px; }
+.row-role-control select { flex: 1; min-width: 0; }
+.role-filter-dropdown { position: relative; width: 100%; }
+.role-filter-dropdown summary { min-height: 34px; padding: 7px 30px 7px 10px; border: 1px solid #cdd3ce; border-radius: 8px; display: flex; align-items: center; color: var(--ink); background: #fff; font-size: 12px; font-weight: 750; cursor: pointer; list-style: none; }
+.role-filter-dropdown summary::-webkit-details-marker { display: none; }
+.role-filter-dropdown summary::after { content: "⌄"; position: absolute; right: 10px; color: #71807b; font-size: 14px; }
+.role-filter-dropdown[open] summary { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(8,127,106,.1); }
+.role-filter-menu { position: absolute; z-index: 5; top: calc(100% + 5px); left: 0; min-width: 150px; padding: 6px; border: 1px solid #d8ddd8; border-radius: 9px; background: #fff; box-shadow: 0 10px 24px rgba(20,39,34,.14); }
+.role-filter-menu label { padding: 8px; flex-direction: row; align-items: center; gap: 8px; border-radius: 6px; color: var(--ink); font-size: 12px; cursor: pointer; }
+.role-filter-menu label:hover { background: #f0f7f4; }
+.role-filter-menu label > span { color: inherit; font-weight: 650; }
+.role-filter-check, .place-row-check { width: 16px; min-width: 16px; height: 16px; margin: 0; padding: 0; accent-color: var(--accent); cursor: pointer; }
 .delete-column, .delete-cell { text-align: center; }
 .delete-cell { padding-top: 17px; }
 .row-delete-button { min-height: 27px; padding: 5px 7px; border-radius: 7px; font-size: 10px; letter-spacing: 0; text-transform: none; }

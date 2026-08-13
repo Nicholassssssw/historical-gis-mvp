@@ -148,28 +148,28 @@ function rowMatchesSelectedRole(row, selectedRole) {
 }
 
 function updatePlaceSelectionState() {
-  const master = $('#roleMasterCheck');
-  const selectedRole = $('#roleSelectionFilter').value;
-  const matchingRows = placeRows().filter(row => rowMatchesSelectedRole(row, selectedRole));
-  const checkedCount = matchingRows.filter(row => row.querySelector('.place-row-check').checked).length;
-  master.disabled = matchingRows.length === 0;
-  master.checked = matchingRows.length > 0 && checkedCount === matchingRows.length;
-  master.indeterminate = checkedCount > 0 && checkedCount < matchingRows.length;
+  $$('.role-filter-check').forEach(filterCheck => {
+    const matchingRows = placeRows().filter(row => rowMatchesSelectedRole(row, filterCheck.dataset.roleFilter));
+    const checkedCount = matchingRows.filter(row => row.querySelector('.place-row-check').checked).length;
+    filterCheck.disabled = matchingRows.length === 0;
+    filterCheck.checked = matchingRows.length > 0 && checkedCount === matchingRows.length;
+    filterCheck.indeterminate = checkedCount > 0 && checkedCount < matchingRows.length;
+  });
 }
 
-$('#roleSelectionFilter').addEventListener('change', updatePlaceSelectionState);
-
-$('#roleMasterCheck').addEventListener('change', event => {
-  const selectedRole = $('#roleSelectionFilter').value;
+$$('.role-filter-check').forEach(filterCheck => filterCheck.addEventListener('change', event => {
+  const selectedRole = event.target.dataset.roleFilter;
+  const otherRole = selectedRole === 'passed' ? 'mentioned_only' : 'passed';
+  const otherRoleChecked = $(`.role-filter-check[data-role-filter="${otherRole}"]`).checked;
   placeRows().filter(row => rowMatchesSelectedRole(row, selectedRole)).forEach(row => {
     const check = row.querySelector('.place-row-check');
-    check.checked = event.target.checked;
+    check.checked = event.target.checked || (otherRoleChecked && rowMatchesSelectedRole(row, otherRole));
     const placeId = Number(row.dataset.id);
     if (check.checked) selectedPlaceIds.add(placeId);
     else selectedPlaceIds.delete(placeId);
   });
   updatePlaceSelectionState();
-});
+}));
 
 $('#placesTable tbody').addEventListener('change', event => {
   if (event.target.classList.contains('place-row-check')) {
