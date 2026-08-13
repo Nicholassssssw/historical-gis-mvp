@@ -81,18 +81,18 @@
       <div class="table-wrap">
         <table id="placesTable" class="review-table">
           <thead><tr>
-            <th class="selection-column">
-              <label class="table-select-all" for="selectAllPlaces">
-                <input id="selectAllPlaces" type="checkbox">
-                <span>全選</span>
-              </label>
-            </th>
             <th>次序</th><th>日期</th><th>地名</th>
             <th class="role-column">
-              <span>經過／提及</span>
-              <span class="bulk-role-actions">
-                <button id="bulkPassedBtn" type="button">全部經過</button>
-                <button id="bulkMentionedBtn" type="button">全部提及</button>
+              <span class="column-title">經過／提及</span>
+              <span class="role-header-control">
+                <select id="roleSelectionFilter" aria-label="選擇要全選的地名分類">
+                  <option value="passed">經過</option>
+                  <option value="mentioned_only">提及</option>
+                </select>
+                <label class="role-master-toggle" for="roleMasterCheck">
+                  <input id="roleMasterCheck" type="checkbox">
+                  <span>全選</span>
+                </label>
               </span>
             </th>
             <th>歷史區域</th><th>原句</th><th class="delete-column">刪除</th>

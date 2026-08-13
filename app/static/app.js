@@ -1,6 +1,7 @@
 let projectId = null;
 let config = {};
 let currentPlaces = [];
+let selectedPlaceIds = new Set();
 let currentExtractionPlan = null;
 let mapState = { view:null, pointLayer:null, routeLayer:null, sketch:null, selectedGraphic:null };
 
@@ -99,6 +100,7 @@ $('#extractBtn').addEventListener('click', async () => {
   try {
     const result = await api(`/api/projects/${projectId}/extract`, {method:'POST'});
     currentPlaces = result.places;
+    selectedPlaceIds.clear();
     renderPlaces(currentPlaces);
     $('#step2').classList.remove('hidden');
     markStep(2);
@@ -113,17 +115,21 @@ $('#extractBtn').addEventListener('click', async () => {
 
 function renderPlaces(places) {
   const tbody = $('#placesTable tbody');
+  const liveIds = new Set(places.map(place => place.id));
+  selectedPlaceIds = new Set([...selectedPlaceIds].filter(id => liveIds.has(id)));
   tbody.innerHTML = places.map(p => `
     <tr data-id="${p.id}">
-      <td class="selection-cell"><input class="place-row-check" type="checkbox" aria-label="選擇 ${esc(p.original_name)}"></td>
       <td><span class="readonly-value order-value">${p.route_order}</span></td>
       <td><span class="readonly-value">${esc(p.date_text || '—')}</span></td>
       <td><span class="readonly-value place-value">${esc(p.original_name)}</span></td>
-      <td><select data-f="route_role">
-        <option value="passed" ${p.route_role==='passed'?'selected':''}>經過</option>
-        <option value="mentioned_only" ${p.route_role==='mentioned_only'?'selected':''}>提及</option>
-        <option value="passed_and_mentioned" ${p.route_role==='passed_and_mentioned'?'selected':''}>經過及提及</option>
-      </select></td>
+      <td><span class="row-role-control">
+        <select data-f="route_role">
+          <option value="passed" ${p.route_role==='passed'?'selected':''}>經過</option>
+          <option value="mentioned_only" ${p.route_role==='mentioned_only'?'selected':''}>提及</option>
+          <option value="passed_and_mentioned" ${p.route_role==='passed_and_mentioned'?'selected':''}>經過及提及</option>
+        </select>
+        <input class="place-row-check" type="checkbox" ${selectedPlaceIds.has(p.id)?'checked':''} aria-label="選擇 ${esc(p.original_name)}">
+      </span></td>
       <td><input data-f="historical_region" value="${esc(p.historical_region)}" placeholder="可修改"></td>
       <td><span class="readonly-value sentence-value">${esc(p.sentence || '—')}</span></td>
       <td class="delete-cell"><button type="button" class="row-delete-button" data-action="delete-place" aria-label="刪除 ${esc(p.original_name)}">刪除</button></td>
@@ -135,57 +141,46 @@ function placeRows() {
   return $$('#placesTable tbody tr');
 }
 
-function updatePlaceSelectionState() {
-  const master = $('#selectAllPlaces');
-  const checks = $$('.place-row-check');
-  const checkedCount = checks.filter(check => check.checked).length;
-  master.checked = checks.length > 0 && checkedCount === checks.length;
-  master.indeterminate = checkedCount > 0 && checkedCount < checks.length;
+function rowMatchesSelectedRole(row, selectedRole) {
+  const rowRole = row.querySelector('[data-f="route_role"]').value;
+  if (rowRole === 'passed_and_mentioned') return true;
+  return rowRole === selectedRole;
 }
 
-$('#selectAllPlaces').addEventListener('change', event => {
-  $$('.place-row-check').forEach(check => { check.checked = event.target.checked; });
+function updatePlaceSelectionState() {
+  const master = $('#roleMasterCheck');
+  const selectedRole = $('#roleSelectionFilter').value;
+  const matchingRows = placeRows().filter(row => rowMatchesSelectedRole(row, selectedRole));
+  const checkedCount = matchingRows.filter(row => row.querySelector('.place-row-check').checked).length;
+  master.disabled = matchingRows.length === 0;
+  master.checked = matchingRows.length > 0 && checkedCount === matchingRows.length;
+  master.indeterminate = checkedCount > 0 && checkedCount < matchingRows.length;
+}
+
+$('#roleSelectionFilter').addEventListener('change', updatePlaceSelectionState);
+
+$('#roleMasterCheck').addEventListener('change', event => {
+  const selectedRole = $('#roleSelectionFilter').value;
+  placeRows().filter(row => rowMatchesSelectedRole(row, selectedRole)).forEach(row => {
+    const check = row.querySelector('.place-row-check');
+    check.checked = event.target.checked;
+    const placeId = Number(row.dataset.id);
+    if (check.checked) selectedPlaceIds.add(placeId);
+    else selectedPlaceIds.delete(placeId);
+  });
   updatePlaceSelectionState();
 });
 
 $('#placesTable tbody').addEventListener('change', event => {
-  if (event.target.classList.contains('place-row-check')) updatePlaceSelectionState();
+  if (event.target.classList.contains('place-row-check')) {
+    const placeId = Number(event.target.closest('tr').dataset.id);
+    if (event.target.checked) selectedPlaceIds.add(placeId);
+    else selectedPlaceIds.delete(placeId);
+  }
+  if (event.target.classList.contains('place-row-check') || event.target.dataset.f === 'route_role') {
+    updatePlaceSelectionState();
+  }
 });
-
-async function bulkSetRouteRole(routeRole, label) {
-  if (!projectId) return;
-  const checkedRows = placeRows().filter(row => row.querySelector('.place-row-check').checked);
-  const targetRows = checkedRows.length ? checkedRows : placeRows();
-  if (!targetRows.length) {
-    setStatus($('#placesStatus'), '目前沒有地名可更新。', true);
-    return;
-  }
-  const payload = {route_role: routeRole};
-  if (checkedRows.length) payload.place_ids = checkedRows.map(row => Number(row.dataset.id));
-  const buttons = [$('#bulkPassedBtn'), $('#bulkMentionedBtn')];
-  buttons.forEach(button => { button.disabled = true; });
-  try {
-    const result = await api(`/api/projects/${projectId}/places/route-role`, {
-      method:'PATCH',
-      headers:{'Content-Type':'application/json'},
-      body:JSON.stringify(payload),
-    });
-    const targetIds = new Set(targetRows.map(row => Number(row.dataset.id)));
-    currentPlaces.forEach(place => {
-      if (targetIds.has(place.id)) place.route_role = routeRole;
-    });
-    renderPlaces(currentPlaces);
-    const scope = checkedRows.length ? '已勾選的' : '全部';
-    setStatus($('#placesStatus'), `✓ 已將${scope} ${result.updated} 個地名設為「${label}」。`);
-  } catch (err) {
-    setStatus($('#placesStatus'), err.message, true);
-  } finally {
-    buttons.forEach(button => { button.disabled = false; });
-  }
-}
-
-$('#bulkPassedBtn').addEventListener('click', () => bulkSetRouteRole('passed', '經過'));
-$('#bulkMentionedBtn').addEventListener('click', () => bulkSetRouteRole('mentioned_only', '提及'));
 
 $('#placesTable tbody').addEventListener('click', async event => {
   const button = event.target.closest('[data-action="delete-place"]');
@@ -196,6 +191,7 @@ $('#placesTable tbody').addEventListener('click', async event => {
   button.disabled = true;
   try {
     await api(`/api/places/${row.dataset.id}`, {method:'DELETE'});
+    selectedPlaceIds.delete(Number(row.dataset.id));
     currentPlaces = currentPlaces.filter(item => item.id !== Number(row.dataset.id));
     renderPlaces(currentPlaces);
     setStatus($('#placesStatus'), `✓ 已刪除「${place?.original_name || '地名'}」。`);
