@@ -16,11 +16,20 @@ def ensure_compatibility_schema():
     if "projects" not in inspector.get_table_names():
         return
     columns = {column["name"] for column in inspector.get_columns("projects")}
-    if "historical_period" not in columns:
+    project_additions = {
+        "historical_period": "VARCHAR(120)",
+        "extraction_total_reads": "INTEGER DEFAULT 0",
+        "extraction_completed_reads": "INTEGER DEFAULT 0",
+        "extraction_chunk_chars": "INTEGER",
+        "extraction_partial_json": "TEXT",
+    }
+    missing_project_columns = {
+        name: sql_type for name, sql_type in project_additions.items() if name not in columns
+    }
+    if missing_project_columns:
         with engine.begin() as connection:
-            connection.execute(text(
-                "ALTER TABLE projects ADD COLUMN historical_period VARCHAR(120)"
-            ))
+            for name, sql_type in missing_project_columns.items():
+                connection.execute(text(f"ALTER TABLE projects ADD COLUMN {name} {sql_type}"))
 
     inspector = inspect(engine)
     if "places" not in inspector.get_table_names():

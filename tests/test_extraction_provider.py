@@ -192,6 +192,63 @@ def test_vertex_read_plan_keeps_short_document_to_one_read(monkeypatch):
     assert plan["read_count"] == 1
 
 
+def test_vertex_resume_skips_completed_reads(monkeypatch):
+    calls = []
+
+    class FakeCredentials:
+        valid = True
+        token = "test-access-token"
+
+    def fake_post(url, **kwargs):
+        calls.append(kwargs["json"])
+        read_number = len(calls) + 1
+        response = FakeDeepSeekResponse()
+        response.json = lambda: {
+            "choices": [{"message": {"content": json.dumps({
+                "places": [{
+                    "route_order": 1,
+                    "original_name": f"地名{read_number}",
+                    "normalized_name": f"地名{read_number}",
+                    "sentence": f"經地名{read_number}",
+                    "route_role": "passed",
+                    "confidence": 0.9,
+                }]
+            }, ensure_ascii=False)}}]
+        }
+        return response
+
+    completed_place = extraction.PlaceExtraction.model_validate({
+        "places": [{
+            "route_order": 1,
+            "original_name": "地名1",
+            "normalized_name": "地名1",
+            "sentence": "經地名1",
+            "route_role": "passed",
+            "confidence": 0.9,
+        }]
+    }).places
+    monkeypatch.setenv("GOOGLE_CLOUD_PROJECT", "test-project")
+    monkeypatch.setattr(
+        extraction.google.auth,
+        "default",
+        lambda **kwargs: (FakeCredentials(), "test-project"),
+    )
+    monkeypatch.setattr(extraction.httpx, "post", fake_post)
+
+    result = extraction.extract_places_with_vertex_deepseek(
+        ("甲" * 900 + "。\n") * 3,
+        "明朝",
+        start_read=1,
+        existing_places=completed_place,
+        chunk_chars=1000,
+    )
+
+    assert len(calls) == 2
+    assert [place.route_order for place in result.places] == [1, 2, 3]
+    assert [place.original_name for place in result.places] == ["地名1", "地名2", "地名3"]
+    assert "chunk 2 of 3" in calls[0]["messages"][0]["content"]
+
+
 def test_vertex_429_retries_and_surfaces_google_message(monkeypatch):
     calls = 0
     sleeps = []

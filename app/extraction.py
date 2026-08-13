@@ -229,8 +229,8 @@ def _split_source_text(text: str, max_chars: int) -> list[str]:
 def vertex_extraction_plan(text: str, word_count: int | None = None) -> dict:
     """Plan model reads after upload metrics are known; extraction uses the same plan."""
     words = count_words(text) if word_count is None else word_count
-    words_per_read = max(1000, int(os.getenv("VERTEX_WORDS_PER_READ", "40000")))
-    hard_chunk_chars = max(1000, int(os.getenv("VERTEX_CHUNK_CHARS", "45000")))
+    words_per_read = max(1000, int(os.getenv("VERTEX_WORDS_PER_READ", "20000")))
+    hard_chunk_chars = max(1000, int(os.getenv("VERTEX_CHUNK_CHARS", "24000")))
     reads_by_words = max(1, (words + words_per_read - 1) // words_per_read)
     reads_by_chars = max(1, (len(text) + hard_chunk_chars - 1) // hard_chunk_chars)
     minimum_read_count = max(reads_by_words, reads_by_chars)
@@ -332,6 +332,11 @@ def _post_vertex_json(endpoint: str, payload: dict) -> dict:
 def extract_places_with_vertex_deepseek(
     text: str,
     historical_period: str | None = None,
+    *,
+    start_read: int = 0,
+    existing_places: list | None = None,
+    chunk_chars: int | None = None,
+    progress_callback=None,
 ) -> PlaceExtraction:
     _, project = _vertex_access_token_and_project()
     location = os.getenv("VERTEX_LOCATION", "global").strip().lower()
@@ -346,10 +351,14 @@ def extract_places_with_vertex_deepseek(
         "/endpoints/openapi/chat/completions"
     )
     plan = vertex_extraction_plan(text)
-    chunks = _split_source_text(text, plan["target_chunk_chars"])
-    merged_places = []
+    chunks = _split_source_text(text, chunk_chars or plan["target_chunk_chars"])
+    if not 0 <= start_read <= len(chunks):
+        raise RuntimeError("已儲存的閱讀進度與目前文件不一致，請重新上載文件。")
+    merged_places = list(existing_places or [])
 
-    for chunk_index, chunk in enumerate(chunks, start=1):
+    for zero_based_index in range(start_read, len(chunks)):
+        chunk_index = zero_based_index + 1
+        chunk = chunks[zero_based_index]
         user_content = (
             f"{_extraction_prompt(historical_period)}\n\n"
             f"SOURCE TEXT TO EXTRACT (chunk {chunk_index} of {len(chunks)}):\n"
@@ -378,6 +387,8 @@ def extract_places_with_vertex_deepseek(
         for item in sorted(chunk_result.places, key=lambda place: place.route_order):
             item.route_order = len(merged_places) + 1
             merged_places.append(item)
+        if progress_callback:
+            progress_callback(chunk_index, len(chunks), merged_places)
 
     return PlaceExtraction(places=merged_places)
 

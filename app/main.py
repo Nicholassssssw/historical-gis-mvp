@@ -1,3 +1,4 @@
+import json
 import os
 from pathlib import Path
 from typing import Annotated
@@ -13,9 +14,16 @@ load_dotenv()
 
 from .db import Base, engine, ensure_compatibility_schema, get_db
 from .models import Candidate, Place, Project
-from .schemas import PlaceCreate, PlaceUpdate
+from .schemas import ExtractedPlace, PlaceCreate, PlaceUpdate
 from .file_parser import actual_page_count, extract_text
-from .extraction import extract_places, extraction_provider_config, vertex_extraction_plan
+from .extraction import (
+    _split_source_text,
+    configured_extraction_provider,
+    extract_places,
+    extract_places_with_vertex_deepseek,
+    extraction_provider_config,
+    vertex_extraction_plan,
+)
 from .geocoder import candidate_to_dict, geocode_project
 from .exporter import project_geojson
 from .place_roles import MAPPED_ROUTE_ROLES, normalize_route_role
@@ -140,6 +148,9 @@ async def upload_project(
         historical_period=period,
         raw_text=text,
         stage="uploaded",
+        extraction_total_reads=extraction_plan["read_count"],
+        extraction_completed_reads=0,
+        extraction_chunk_chars=extraction_plan["target_chunk_chars"],
     )
     db.add(project)
     db.commit()
@@ -155,10 +166,67 @@ async def upload_project(
 def run_extraction(project_id: int, db: Session = Depends(get_db)):
     project = project_or_404(db, project_id)
     extraction = extraction_provider_config()
+    provider = configured_extraction_provider()
+    existing_places = []
+    start_read = 0
+    if provider == "google_vertex":
+        plan = vertex_extraction_plan(project.raw_text)
+        if not project.extraction_chunk_chars:
+            project.extraction_chunk_chars = plan["target_chunk_chars"]
+        if not project.extraction_total_reads:
+            project.extraction_total_reads = len(
+                _split_source_text(project.raw_text, project.extraction_chunk_chars)
+            )
+        start_read = project.extraction_completed_reads or 0
+        if start_read and project.extraction_partial_json:
+            try:
+                existing_places = [
+                    ExtractedPlace.model_validate(item)
+                    for item in json.loads(project.extraction_partial_json)
+                ]
+            except (TypeError, ValueError):
+                start_read = 0
+                existing_places = []
+                project.extraction_completed_reads = 0
+                project.extraction_partial_json = None
+        project.stage = "extracting"
+        db.commit()
+
+        def save_extraction_progress(completed, total, places):
+            project.extraction_completed_reads = completed
+            project.extraction_total_reads = total
+            project.extraction_partial_json = json.dumps(
+                [place.model_dump(mode="json") for place in places],
+                ensure_ascii=False,
+            )
+            project.stage = "extracting"
+            db.commit()
+
     try:
-        result = extract_places(project.raw_text, project.historical_period)
+        if provider == "google_vertex":
+            result = extract_places_with_vertex_deepseek(
+                project.raw_text,
+                project.historical_period,
+                start_read=start_read,
+                existing_places=existing_places,
+                chunk_chars=project.extraction_chunk_chars,
+                progress_callback=save_extraction_progress,
+            )
+        else:
+            result = extract_places(project.raw_text, project.historical_period)
     except Exception as e:
-        raise HTTPException(502, f"{extraction['label']} extraction failed: {e}")
+        project.stage = "extraction_error"
+        db.commit()
+        progress = ""
+        if provider == "google_vertex" and project.extraction_completed_reads:
+            progress = (
+                f" 已保存 {project.extraction_completed_reads}/"
+                f"{project.extraction_total_reads} 次閱讀；再次按抽取會由下一批繼續。"
+            )
+        raise HTTPException(
+            502,
+            f"{extraction['label']} extraction failed: {e}.{progress}",
+        )
 
     db.query(Candidate).filter(Candidate.place_id.in_(
         db.query(Place.id).filter(Place.project_id == project.id)
@@ -192,6 +260,8 @@ def run_extraction(project_id: int, db: Session = Depends(get_db)):
         ))
     project.stage = "review_places"
     project.places_confirmed = False
+    project.extraction_completed_reads = 0
+    project.extraction_partial_json = None
     db.commit()
     return {"count": len(extracted), "places": [place_dict(p) for p in db.query(Place).filter(Place.project_id == project.id).order_by(Place.route_order).all()]}
 

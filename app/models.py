@@ -15,6 +15,10 @@ class Project(Base):
     raw_text: Mapped[str] = mapped_column(Text)
     stage: Mapped[str] = mapped_column(String(50), default="uploaded")
     places_confirmed: Mapped[bool] = mapped_column(Boolean, default=False)
+    extraction_total_reads: Mapped[int] = mapped_column(Integer, default=0)
+    extraction_completed_reads: Mapped[int] = mapped_column(Integer, default=0)
+    extraction_chunk_chars: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    extraction_partial_json: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
     places = relationship("Place", back_populates="project", cascade="all, delete-orphan")
