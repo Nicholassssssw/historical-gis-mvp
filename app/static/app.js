@@ -118,18 +118,11 @@ function renderPlaces(places) {
   const liveIds = new Set(places.map(place => place.id));
   selectedPlaceIds = new Set([...selectedPlaceIds].filter(id => liveIds.has(id)));
   tbody.innerHTML = places.map(p => `
-    <tr data-id="${p.id}">
+    <tr data-id="${p.id}" data-route-role="${esc(p.route_role)}">
       <td><span class="readonly-value order-value">${p.route_order}</span></td>
       <td><span class="readonly-value">${esc(p.date_text || '—')}</span></td>
       <td><span class="readonly-value place-value">${esc(p.original_name)}</span></td>
-      <td><span class="row-role-control">
-        <select data-f="route_role">
-          <option value="passed" ${p.route_role==='passed'?'selected':''}>經過</option>
-          <option value="mentioned_only" ${p.route_role==='mentioned_only'?'selected':''}>提及</option>
-          <option value="passed_and_mentioned" ${p.route_role==='passed_and_mentioned'?'selected':''}>經過及提及</option>
-        </select>
-        <input class="place-row-check" type="checkbox" ${selectedPlaceIds.has(p.id)?'checked':''} aria-label="選擇 ${esc(p.original_name)}">
-      </span></td>
+      <td class="role-check-cell"><input class="place-row-check" type="checkbox" ${selectedPlaceIds.has(p.id)?'checked':''} aria-label="選擇 ${esc(p.original_name)}"></td>
       <td><input data-f="historical_region" value="${esc(p.historical_region)}" placeholder="可修改"></td>
       <td><span class="readonly-value sentence-value">${esc(p.sentence || '—')}</span></td>
       <td class="delete-cell"><button type="button" class="row-delete-button" data-action="delete-place" aria-label="刪除 ${esc(p.original_name)}">刪除</button></td>
@@ -142,7 +135,7 @@ function placeRows() {
 }
 
 function rowMatchesSelectedRole(row, selectedRole) {
-  const rowRole = row.querySelector('[data-f="route_role"]').value;
+  const rowRole = row.dataset.routeRole;
   if (rowRole === 'passed_and_mentioned') return true;
   return rowRole === selectedRole;
 }
@@ -177,9 +170,7 @@ $('#placesTable tbody').addEventListener('change', event => {
     if (event.target.checked) selectedPlaceIds.add(placeId);
     else selectedPlaceIds.delete(placeId);
   }
-  if (event.target.classList.contains('place-row-check') || event.target.dataset.f === 'route_role') {
-    updatePlaceSelectionState();
-  }
+  if (event.target.classList.contains('place-row-check')) updatePlaceSelectionState();
 });
 
 $('#placesTable tbody').addEventListener('click', async event => {
