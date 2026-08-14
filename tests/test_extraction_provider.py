@@ -9,6 +9,7 @@ from app import extraction
 @pytest.fixture(autouse=True)
 def disable_vertex_pacing_during_tests(monkeypatch):
     monkeypatch.setenv("VERTEX_MIN_REQUEST_INTERVAL_SECONDS", "0")
+    monkeypatch.setenv("VERTEX_AUTH_METHOD", "adc")
     monkeypatch.setattr(extraction, "_VERTEX_LAST_REQUEST_AT", 0.0)
     monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
     monkeypatch.delenv("GOOGLE_CLOUD_API_KEY", raising=False)
@@ -66,7 +67,7 @@ def test_deepseek_json_output_is_validated(monkeypatch):
 
 def test_provider_selection(monkeypatch):
     monkeypatch.setenv("LLM_PROVIDER", "google_vertex")
-    monkeypatch.setenv("LLM_MODEL", "deepseek-ai/deepseek-v3.2-maas")
+    monkeypatch.setenv("LLM_MODEL", "deepseek-ai/deepseek-v3.1-maas")
     monkeypatch.setenv("GOOGLE_CLOUD_PROJECT", "test-project")
     monkeypatch.setattr(
         extraction.google.auth,
@@ -78,9 +79,9 @@ def test_provider_selection(monkeypatch):
         "provider": "google_vertex",
         "label": "Vertex AI DeepSeek",
         "enabled": True,
-        "model": "deepseek-ai/deepseek-v3.2-maas",
+        "model": "deepseek-ai/deepseek-v3.1-maas",
         "auth_method": "application_default_credentials",
-        "setup_message": "需要 GOOGLE_API_KEY 或 Google Cloud 登入",
+        "setup_message": "需要 Google Cloud ADC 或可用的 project API key",
     }
 
 
@@ -96,12 +97,13 @@ def test_vertex_provider_is_not_ready_without_adc(monkeypatch):
     config = extraction.extraction_provider_config()
 
     assert config["enabled"] is False
-    assert config["setup_message"] == "需要 GOOGLE_API_KEY 或 Google Cloud 登入"
+    assert config["setup_message"] == "需要 Google Cloud ADC 或可用的 project API key"
 
 
 def test_vertex_provider_prefers_google_project_api_key_without_adc(monkeypatch):
     monkeypatch.setenv("LLM_PROVIDER", "google_vertex")
     monkeypatch.setenv("GOOGLE_CLOUD_PROJECT", "test-project")
+    monkeypatch.setenv("VERTEX_AUTH_METHOD", "api_key")
     monkeypatch.setenv("GOOGLE_API_KEY", "test-google-key")
     monkeypatch.setattr(
         extraction.google.auth,
@@ -115,7 +117,7 @@ def test_vertex_provider_prefers_google_project_api_key_without_adc(monkeypatch)
     assert config["auth_method"] == "google_api_key"
 
 
-def test_vertex_deepseek_uses_adc_and_global_openapi_endpoint(monkeypatch):
+def test_vertex_deepseek_uses_adc_and_regional_openapi_endpoint(monkeypatch):
     captured = {}
 
     class FakeCredentials:
@@ -128,9 +130,9 @@ def test_vertex_deepseek_uses_adc_and_global_openapi_endpoint(monkeypatch):
         captured["payload"] = kwargs["json"]
         return FakeDeepSeekResponse()
 
-    monkeypatch.setenv("LLM_MODEL", "deepseek-ai/deepseek-v3.2-maas")
+    monkeypatch.setenv("LLM_MODEL", "deepseek-ai/deepseek-v3.1-maas")
     monkeypatch.setenv("GOOGLE_CLOUD_PROJECT", "test-project")
-    monkeypatch.setenv("VERTEX_LOCATION", "global")
+    monkeypatch.setenv("VERTEX_LOCATION", "us-west2")
     monkeypatch.setattr(
         extraction.google.auth,
         "default",
@@ -142,11 +144,11 @@ def test_vertex_deepseek_uses_adc_and_global_openapi_endpoint(monkeypatch):
 
     assert result.places[0].original_name == "臨安"
     assert captured["url"] == (
-        "https://aiplatform.googleapis.com/v1/projects/test-project/locations/"
-        "global/endpoints/openapi/chat/completions"
+        "https://us-west2-aiplatform.googleapis.com/v1/projects/test-project/"
+        "locations/us-west2/endpoints/openapi/chat/completions"
     )
     assert captured["headers"]["Authorization"] == "Bearer test-access-token"
-    assert captured["payload"]["model"] == "deepseek-ai/deepseek-v3.2-maas"
+    assert captured["payload"]["model"] == "deepseek-ai/deepseek-v3.1-maas"
     assert captured["payload"]["response_format"] == {"type": "json_object"}
     assert captured["payload"]["messages"][0]["role"] == "user"
 
@@ -158,8 +160,9 @@ def test_vertex_deepseek_uses_google_project_key_before_adc(monkeypatch):
         calls.append(kwargs["headers"])
         return FakeDeepSeekResponse()
 
-    monkeypatch.setenv("LLM_MODEL", "deepseek-ai/deepseek-v3.2-maas")
+    monkeypatch.setenv("LLM_MODEL", "deepseek-ai/deepseek-v3.1-maas")
     monkeypatch.setenv("GOOGLE_CLOUD_PROJECT", "test-project")
+    monkeypatch.setenv("VERTEX_AUTH_METHOD", "api_key")
     monkeypatch.setenv("GOOGLE_API_KEY", "test-google-key")
     monkeypatch.setattr(extraction.httpx, "post", fake_post)
 
@@ -188,6 +191,7 @@ def test_restricted_google_project_key_falls_back_to_adc(monkeypatch):
         return FakeDeepSeekResponse()
 
     monkeypatch.setenv("GOOGLE_CLOUD_PROJECT", "test-project")
+    monkeypatch.setenv("VERTEX_AUTH_METHOD", "api_key")
     monkeypatch.setenv("GOOGLE_API_KEY", "restricted-google-key")
     monkeypatch.setattr(
         extraction.google.auth,
@@ -495,7 +499,7 @@ def test_gemini_provider_is_rejected(monkeypatch):
 
 def test_direct_deepseek_fallback_uses_provider_specific_model(monkeypatch):
     monkeypatch.setenv("LLM_PROVIDER", "google_vertex")
-    monkeypatch.setenv("LLM_MODEL", "deepseek-ai/deepseek-v3.2-maas")
+    monkeypatch.setenv("LLM_MODEL", "deepseek-ai/deepseek-v3.1-maas")
     monkeypatch.setenv("DEEPSEEK_MODEL", "deepseek-chat")
 
     assert extraction._configured_model("deepseek") == "deepseek-chat"

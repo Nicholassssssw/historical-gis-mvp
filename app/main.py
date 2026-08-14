@@ -109,7 +109,7 @@ def config():
         "deepseek_enabled": bool(os.getenv("DEEPSEEK_API_KEY")),
         "deepseek_model": os.getenv("DEEPSEEK_MODEL", "deepseek-v4-flash"),
         "vertex_enabled": bool(os.getenv("GOOGLE_CLOUD_PROJECT")),
-        "vertex_location": os.getenv("VERTEX_LOCATION", "global"),
+        "vertex_location": os.getenv("VERTEX_LOCATION", "us-west2"),
         "vertex_auth_method": extraction.get("auth_method", "unavailable"),
         "ai_provider": extraction["provider"],
         "extraction_provider_label": extraction["label"],

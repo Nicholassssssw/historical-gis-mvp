@@ -84,14 +84,15 @@ ArcGIS 網頁顯示則直接由 database JSON 建 GraphicsLayer，拖點後 rout
 cp .env.example .env
 ```
 
-預設使用 Google Vertex AI 的 managed DeepSeek V3.2：
+預設使用 Google Vertex AI 的 managed DeepSeek V3.1（已實測 `us-west2` endpoint）：
 
 ```env
 LLM_PROVIDER=google_vertex
-LLM_MODEL=deepseek-ai/deepseek-v3.2-maas
+LLM_MODEL=deepseek-ai/deepseek-v3.1-maas
 GOOGLE_CLOUD_PROJECT=your-project-id
+VERTEX_AUTH_METHOD=adc
 GOOGLE_API_KEY=your-service-account-bound-project-key
-VERTEX_LOCATION=global
+VERTEX_LOCATION=us-west2
 VERTEX_CHUNK_CHARS=24000
 VERTEX_WORDS_PER_READ=20000
 VERTEX_PROMPT_TOKENS_PER_READ=2600
@@ -102,9 +103,9 @@ VERTEX_RETRY_MAX_DELAY_SECONDS=60
 VERTEX_MIN_REQUEST_INTERVAL_SECONDS=2
 ```
 
-上載後，backend 會先完成字數統計，再按每次最多約 20,000 字及 24,000 字元硬上限決定實際閱讀次數；長文本會按段落／句界自動分批抽取，每批完成後保存進度，再把各批結果合併成全書 route order。若連線中斷，再按抽取會由下一個未完成批次續跑。Vertex AI 請求會排隊逐一發送並預設相隔最少 2 秒。系統只使用 DeepSeek，連接優先次序為 `GOOGLE_API_KEY` → Google Cloud ADC → `DEEPSEEK_API_KEY`。Google Cloud 持續 429、權限失敗或連線中斷時，如已設定 `DEEPSEEK_API_KEY`，會改用 DeepSeek 官方 API；否則會停止並保留已完成分段，不會轉用其他模型。
+上載後，backend 會先完成字數統計，再按每次最多約 20,000 字及 24,000 字元硬上限決定實際閱讀次數；長文本會按段落／句界自動分批抽取，每批完成後保存進度，再把各批結果合併成全書 route order。若連線中斷，再按抽取會由下一個未完成批次續跑。Vertex AI 請求會排隊逐一發送並預設相隔最少 2 秒。系統只使用 DeepSeek。預設連接優先次序為 Google Cloud ADC → `DEEPSEEK_API_KEY`；只有已經在 Google Cloud 允許 Vertex AI 的 key 才應設 `VERTEX_AUTH_METHOD=api_key`。Google Cloud 持續 429、權限失敗或連線中斷時，如已設定 `DEEPSEEK_API_KEY`，會改用 DeepSeek 官方 API；否則會停止並保留已完成分段，不會轉用其他模型。
 
-`GOOGLE_API_KEY` 要使用綁定 service account 的 Google Cloud project key，並在 API restrictions 允許 Vertex AI API (`aiplatform.googleapis.com`)。如 key 被限制，系統會在不暴露 key 的情況下改用 Application Default Credentials：
+`GOOGLE_API_KEY` 只適用於綁定 service account、並在 API restrictions 允許 Vertex AI API (`aiplatform.googleapis.com`) 的 project key。目前這個 project 的 managed policy 不允許現有 Gemini key 擴展至 Vertex AI，所以預設使用 Google 建議的 Application Default Credentials：
 
 ```bash
 gcloud auth application-default login
@@ -115,7 +116,7 @@ Cloud Run 應使用執行服務帳戶及 IAM，不要把 service-account JSON �
 
 如果有 DeepSeek 官方 API key，可以使用 `LLM_PROVIDER=deepseek`。系統不接受 Gemini 或其他 LLM provider。
 
-> 注意：Google Cloud 已於 2026-07-21 將 `deepseek-v3.2-maas` 標示為 deprecated，並列出 2026-10-21 retirement date。Provider/model 分離正是為了日後只改環境變數即可遷移。詳見 [Google Cloud open-model deprecations](https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/deprecations/open-models)。
+> 注意：Google Cloud 已將 managed DeepSeek MaaS endpoints 列入 deprecated；目前 V3.1 `us-west2` 仍可用，但長期應準備轉用 self-deployed DeepSeek。詳見 [Google Cloud open-model deprecations](https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/deprecations/open-models)。
 
 安裝：
 

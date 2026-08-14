@@ -18,7 +18,7 @@ PROMPT_PATH = Path(__file__).resolve().parent.parent / "prompts" / "extract_plac
 
 PROVIDER_DEFAULT_MODELS = {
     "deepseek": "deepseek-v4-flash",
-    "google_vertex": "deepseek-ai/deepseek-v3.2-maas",
+    "google_vertex": "deepseek-ai/deepseek-v3.1-maas",
 }
 
 RETRYABLE_VERTEX_STATUS_CODES = {429, 500, 503, 504}
@@ -71,11 +71,11 @@ def _vertex_credentials_detectable() -> bool:
 
 def _google_cloud_api_key() -> str:
     """Return the Google project key without exposing it to clients or logs."""
+    if os.getenv("VERTEX_AUTH_METHOD", "adc").strip().lower() != "api_key":
+        return ""
     return (
         os.getenv("GOOGLE_API_KEY", "").strip()
         or os.getenv("GOOGLE_CLOUD_API_KEY", "").strip()
-        # Backward compatibility for the key used before the DeepSeek-only switch.
-        or os.getenv("GEMINI_API_KEY", "").strip()
     )
 
 
@@ -98,7 +98,7 @@ def extraction_provider_config() -> dict:
             and auth_method != "unavailable",
             "model": _configured_model(provider),
             "auth_method": auth_method,
-            "setup_message": "需要 GOOGLE_API_KEY 或 Google Cloud 登入",
+            "setup_message": "需要 Google Cloud ADC 或可用的 project API key",
         }
     if provider == "deepseek":
         return {
@@ -435,7 +435,7 @@ def extract_places_with_vertex_deepseek(
     progress_callback=None,
 ) -> PlaceExtraction:
     project = _vertex_project()
-    location = os.getenv("VERTEX_LOCATION", "global").strip().lower()
+    location = os.getenv("VERTEX_LOCATION", "us-west2").strip().lower()
     model = _configured_model("google_vertex")
     hostname = (
         "aiplatform.googleapis.com"
@@ -498,8 +498,9 @@ def extract_places_with_vertex_deepseek(
                 else:
                     raise RuntimeError(
                         "Google Cloud DeepSeek 暫時無法完成請求，而系統已設定為"
-                        "只可使用 DeepSeek。請檢查 GOOGLE_API_KEY 對 Vertex AI "
-                        "API 的限制、稍後重試，或設定 DEEPSEEK_API_KEY。"
+                        "只可使用 DeepSeek。"
+                        f"Vertex AI 回覆：{deepseek_error}。"
+                        "請稍後重試，或設定 DEEPSEEK_API_KEY。"
                     ) from deepseek_error
             except (KeyError, IndexError, TypeError, ValueError) as error:
                 raise RuntimeError(
