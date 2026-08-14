@@ -1,5 +1,7 @@
 import os
+import random
 import re
+import threading
 import time
 from pathlib import Path
 
@@ -23,6 +25,8 @@ PROVIDER_DEFAULT_MODELS = {
 }
 
 RETRYABLE_VERTEX_STATUS_CODES = {429, 500, 503, 504}
+_VERTEX_REQUEST_LOCK = threading.Lock()
+_VERTEX_LAST_REQUEST_AT = 0.0
 
 
 def configured_extraction_provider() -> str:
@@ -259,15 +263,18 @@ def _vertex_error_message(response) -> str:
     except (ValueError, AttributeError):
         payload = None
 
-    error = payload.get("error") if isinstance(payload, dict) else None
-    if isinstance(error, dict):
-        message = error.get("message") or error.get("status")
-        if message:
-            return str(message)
-    if isinstance(error, str) and error:
-        return error
-    if isinstance(payload, dict):
-        message = payload.get("message") or payload.get("detail")
+    payloads = payload if isinstance(payload, list) else [payload]
+    for item in payloads:
+        if not isinstance(item, dict):
+            continue
+        error = item.get("error")
+        if isinstance(error, dict):
+            message = error.get("message") or error.get("status")
+            if message:
+                return str(message)
+        if isinstance(error, str) and error:
+            return error
+        message = item.get("message") or item.get("detail")
         if message:
             return str(message)
     text = getattr(response, "text", "")
@@ -280,53 +287,90 @@ def _vertex_retry_delay(response, attempt: int) -> float:
     try:
         return max(1.0, float(retry_after))
     except (TypeError, ValueError):
-        return float(5 * (3 ** attempt))
+        status_code = getattr(response, "status_code", None)
+        base_variable = (
+            "VERTEX_429_BASE_DELAY_SECONDS"
+            if status_code == 429
+            else "VERTEX_RETRY_BASE_DELAY_SECONDS"
+        )
+        default_base = "10" if status_code == 429 else "5"
+        base_delay = max(
+            1.0,
+            float(os.getenv(base_variable, default_base)),
+        )
+        max_delay = max(
+            base_delay,
+            float(os.getenv("VERTEX_RETRY_MAX_DELAY_SECONDS", "60")),
+        )
+        jitter = random.uniform(0, min(3.0, base_delay * 0.25))
+        return min(max_delay, base_delay * (2 ** attempt) + jitter)
+
+
+def _wait_for_vertex_request_slot() -> None:
+    global _VERTEX_LAST_REQUEST_AT
+    minimum_interval = max(
+        0.0,
+        float(os.getenv("VERTEX_MIN_REQUEST_INTERVAL_SECONDS", "2")),
+    )
+    remaining = minimum_interval - (time.monotonic() - _VERTEX_LAST_REQUEST_AT)
+    if remaining > 0:
+        time.sleep(remaining)
+    _VERTEX_LAST_REQUEST_AT = time.monotonic()
 
 
 def _post_vertex_json(endpoint: str, payload: dict) -> dict:
-    max_retries = max(0, min(2, int(os.getenv("VERTEX_MAX_RETRIES", "2"))))
-    last_error = None
-    for attempt in range(max_retries + 1):
-        access_token, _ = _vertex_access_token_and_project()
-        try:
-            response = httpx.post(
-                endpoint,
-                headers={
-                    "Authorization": f"Bearer {access_token}",
-                    "Content-Type": "application/json; charset=utf-8",
-                },
-                json=payload,
-                timeout=float(os.getenv("LLM_TIMEOUT_SECONDS", "300")),
-            )
-            if (
-                response.status_code in RETRYABLE_VERTEX_STATUS_CODES
-                and attempt < max_retries
-            ):
-                time.sleep(_vertex_retry_delay(response, attempt))
-                continue
-            response.raise_for_status()
-            return response.json()
-        except httpx.HTTPStatusError as error:
-            message = _vertex_error_message(error.response)
-            last_error = RuntimeError(
-                f"Vertex AI API {error.response.status_code}: {message}"
-            )
-            if (
-                error.response.status_code in RETRYABLE_VERTEX_STATUS_CODES
-                and attempt < max_retries
-            ):
-                time.sleep(_vertex_retry_delay(error.response, attempt))
-                continue
-            raise last_error from error
-        except httpx.HTTPError as error:
-            last_error = RuntimeError(f"Vertex AI connection failed: {error}")
-            if attempt < max_retries:
-                time.sleep(float(5 * (3 ** attempt)))
-                continue
-            raise last_error from error
-        except ValueError as error:
-            raise RuntimeError("Vertex AI 沒有返回合法 JSON response。") from error
-    raise last_error or RuntimeError("Vertex AI request failed.")
+    max_retries = max(0, min(8, int(os.getenv("VERTEX_MAX_RETRIES", "5"))))
+    with _VERTEX_REQUEST_LOCK:
+        last_error = None
+        for attempt in range(max_retries + 1):
+            _wait_for_vertex_request_slot()
+            access_token, _ = _vertex_access_token_and_project()
+            try:
+                response = httpx.post(
+                    endpoint,
+                    headers={
+                        "Authorization": f"Bearer {access_token}",
+                        "Content-Type": "application/json; charset=utf-8",
+                    },
+                    json=payload,
+                    timeout=float(os.getenv("LLM_TIMEOUT_SECONDS", "300")),
+                )
+                if (
+                    response.status_code in RETRYABLE_VERTEX_STATUS_CODES
+                    and attempt < max_retries
+                ):
+                    time.sleep(_vertex_retry_delay(response, attempt))
+                    continue
+                response.raise_for_status()
+                return response.json()
+            except httpx.HTTPStatusError as error:
+                message = _vertex_error_message(error.response)
+                if error.response.status_code == 429:
+                    last_error = RuntimeError(
+                        "Vertex AI 暫時繁忙（429），系統已排隊並自動重試"
+                        f" {max_retries} 次：{message}"
+                    )
+                else:
+                    last_error = RuntimeError(
+                        f"Vertex AI API {error.response.status_code}: {message}"
+                    )
+                if (
+                    error.response.status_code in RETRYABLE_VERTEX_STATUS_CODES
+                    and attempt < max_retries
+                ):
+                    time.sleep(_vertex_retry_delay(error.response, attempt))
+                    continue
+                raise last_error from error
+            except httpx.HTTPError as error:
+                last_error = RuntimeError(f"Vertex AI connection failed: {error}")
+                if attempt < max_retries:
+                    retry_response = getattr(error, "response", None)
+                    time.sleep(_vertex_retry_delay(retry_response, attempt))
+                    continue
+                raise last_error from error
+            except ValueError as error:
+                raise RuntimeError("Vertex AI 沒有返回合法 JSON response。") from error
+        raise last_error or RuntimeError("Vertex AI request failed.")
 
 
 def extract_places_with_vertex_deepseek(

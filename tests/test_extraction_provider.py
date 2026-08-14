@@ -1,8 +1,15 @@
 import json
 
 import httpx
+import pytest
 
 from app import extraction
+
+
+@pytest.fixture(autouse=True)
+def disable_vertex_pacing_during_tests(monkeypatch):
+    monkeypatch.setenv("VERTEX_MIN_REQUEST_INTERVAL_SECONDS", "0")
+    monkeypatch.setattr(extraction, "_VERTEX_LAST_REQUEST_AT", 0.0)
 
 
 class FakeDeepSeekResponse:
@@ -295,6 +302,59 @@ def test_vertex_error_message_reads_google_error_body():
     )
 
     assert extraction._vertex_error_message(response) == "Dynamic shared quota exhausted"
+
+
+def test_vertex_error_message_reads_google_list_error_body():
+    response = httpx.Response(
+        429,
+        request=httpx.Request("POST", "https://example.test"),
+        json=[{"error": {
+            "code": 429,
+            "message": "The request is throttled due to too many concurrent requests.",
+            "status": "RESOURCE_EXHAUSTED",
+        }}],
+    )
+
+    assert extraction._vertex_error_message(response) == (
+        "The request is throttled due to too many concurrent requests."
+    )
+
+
+def test_vertex_429_uses_five_truncated_exponential_retries(monkeypatch):
+    calls = 0
+    sleeps = []
+
+    class FakeCredentials:
+        valid = True
+        token = "test-access-token"
+
+    def always_throttled(url, **kwargs):
+        nonlocal calls
+        calls += 1
+        return httpx.Response(
+            429,
+            request=httpx.Request("POST", url),
+            json=[{"error": {"message": "too many concurrent requests"}}],
+        )
+
+    monkeypatch.delenv("VERTEX_MAX_RETRIES", raising=False)
+    monkeypatch.setenv("VERTEX_429_BASE_DELAY_SECONDS", "10")
+    monkeypatch.setenv("VERTEX_RETRY_MAX_DELAY_SECONDS", "60")
+    monkeypatch.setenv("GOOGLE_CLOUD_PROJECT", "test-project")
+    monkeypatch.setattr(extraction.random, "uniform", lambda *_: 0)
+    monkeypatch.setattr(
+        extraction.google.auth,
+        "default",
+        lambda **kwargs: (FakeCredentials(), "test-project"),
+    )
+    monkeypatch.setattr(extraction.httpx, "post", always_throttled)
+    monkeypatch.setattr(extraction.time, "sleep", sleeps.append)
+
+    with pytest.raises(RuntimeError, match="自動重試 5 次"):
+        extraction.extract_places_with_vertex_deepseek("初一經臨安。", "明朝")
+
+    assert calls == 6
+    assert sleeps == [10.0, 20.0, 40.0, 60.0, 60.0]
 
 
 def test_extraction_prompt_keeps_places_from_research_documents():
