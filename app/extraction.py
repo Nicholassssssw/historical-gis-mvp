@@ -29,6 +29,14 @@ _VERTEX_REQUEST_LOCK = threading.Lock()
 _VERTEX_LAST_REQUEST_AT = 0.0
 
 
+class VertexThrottleError(RuntimeError):
+    """Raised after the managed DeepSeek endpoint exhausts its shared capacity."""
+
+
+class VertexModelUnavailableError(RuntimeError):
+    """Raised when a managed model is disabled, unavailable, or retired."""
+
+
 def configured_extraction_provider() -> str:
     provider = os.getenv("LLM_PROVIDER", os.getenv("AI_PROVIDER", "gemini")).strip().lower()
     if provider not in PROVIDER_DEFAULT_MODELS:
@@ -37,8 +45,9 @@ def configured_extraction_provider() -> str:
 
 
 def _configured_model(provider: str) -> str:
+    configured_provider = configured_extraction_provider()
     generic_model = os.getenv("LLM_MODEL", "").strip()
-    if generic_model:
+    if generic_model and provider == configured_provider:
         return generic_model
     legacy_variable = {
         "gemini": "GEMINI_MODEL",
@@ -319,7 +328,7 @@ def _wait_for_vertex_request_slot() -> None:
 
 
 def _post_vertex_json(endpoint: str, payload: dict) -> dict:
-    max_retries = max(0, min(8, int(os.getenv("VERTEX_MAX_RETRIES", "5"))))
+    max_retries = max(0, min(8, int(os.getenv("VERTEX_MAX_RETRIES", "1"))))
     with _VERTEX_REQUEST_LOCK:
         last_error = None
         for attempt in range(max_retries + 1):
@@ -346,9 +355,14 @@ def _post_vertex_json(endpoint: str, payload: dict) -> dict:
             except httpx.HTTPStatusError as error:
                 message = _vertex_error_message(error.response)
                 if error.response.status_code == 429:
-                    last_error = RuntimeError(
+                    last_error = VertexThrottleError(
                         "Vertex AI 暫時繁忙（429），系統已排隊並自動重試"
                         f" {max_retries} 次：{message}"
+                    )
+                elif error.response.status_code in {403, 404}:
+                    last_error = VertexModelUnavailableError(
+                        "Vertex AI DeepSeek 模型不可用"
+                        f"（{error.response.status_code}）：{message}"
                     )
                 else:
                     last_error = RuntimeError(
@@ -371,6 +385,64 @@ def _post_vertex_json(endpoint: str, payload: dict) -> dict:
             except ValueError as error:
                 raise RuntimeError("Vertex AI 沒有返回合法 JSON response。") from error
         raise last_error or RuntimeError("Vertex AI request failed.")
+
+
+def _extract_places_with_vertex_gemini(
+    text: str,
+    historical_period: str | None,
+    project: str,
+    location: str,
+) -> PlaceExtraction:
+    fallback_model = os.getenv(
+        "VERTEX_FALLBACK_MODEL",
+        "gemini-3.1-flash-lite",
+    ).strip()
+    if not fallback_model:
+        raise RuntimeError("VERTEX_FALLBACK_MODEL 未設定。")
+    attempts = max(
+        1,
+        min(10, int(os.getenv("VERTEX_FALLBACK_MAX_ATTEMPTS", "5"))),
+    )
+    client = genai.Client(
+        vertexai=True,
+        project=project,
+        location=location,
+        http_options=types.HttpOptions(
+            api_version="v1",
+            retry_options=types.HttpRetryOptions(
+                initial_delay=2.0,
+                attempts=attempts,
+                max_delay=60.0,
+                jitter=1.0,
+                http_status_codes=[408, 429, 500, 502, 503, 504],
+            ),
+            timeout=int(float(os.getenv("LLM_TIMEOUT_SECONDS", "300")) * 1000),
+        ),
+    )
+    try:
+        response = client.models.generate_content(
+            model=fallback_model,
+            contents=text,
+            config=types.GenerateContentConfig(
+                system_instruction=_extraction_prompt(historical_period),
+                response_mime_type="application/json",
+                response_schema=PlaceExtraction,
+                temperature=0.1,
+                max_output_tokens=int(os.getenv("LLM_MAX_TOKENS", "32768")),
+            ),
+        )
+    except Exception as error:
+        raise RuntimeError(
+            f"Vertex fallback {fallback_model} failed: {error}"
+        ) from error
+    finally:
+        client.close()
+
+    if isinstance(response.parsed, PlaceExtraction):
+        return response.parsed
+    if response.text:
+        return PlaceExtraction.model_validate_json(response.text)
+    raise RuntimeError(f"Vertex fallback {fallback_model} 沒有返回可解析結果。")
 
 
 def extract_places_with_vertex_deepseek(
@@ -399,6 +471,7 @@ def extract_places_with_vertex_deepseek(
     if not 0 <= start_read <= len(chunks):
         raise RuntimeError("已儲存的閱讀進度與目前文件不一致，請重新上載文件。")
     merged_places = list(existing_places or [])
+    fallback_provider = None
 
     for zero_based_index in range(start_read, len(chunks)):
         chunk_index = zero_based_index + 1
@@ -416,17 +489,55 @@ def extract_places_with_vertex_deepseek(
             "max_tokens": int(os.getenv("LLM_MAX_TOKENS", "32768")),
             "stream": False,
         }
-        body = _post_vertex_json(endpoint, payload)
-        try:
-            content = body["choices"][0]["message"]["content"]
-            if not content:
-                raise ValueError("empty content")
-            chunk_result = PlaceExtraction.model_validate_json(content)
-        except (KeyError, IndexError, TypeError, ValueError) as error:
-            raise RuntimeError(
-                f"Vertex AI DeepSeek 第 {chunk_index}/{len(chunks)} 部分"
-                "沒有返回可解析的地名 JSON。"
-            ) from error
+        if fallback_provider == "direct_deepseek":
+            chunk_result = extract_places_with_deepseek(
+                chunk,
+                historical_period,
+            )
+        elif fallback_provider == "vertex_gemini":
+            chunk_result = _extract_places_with_vertex_gemini(
+                chunk,
+                historical_period,
+                project,
+                location,
+            )
+        else:
+            try:
+                body = _post_vertex_json(endpoint, payload)
+                content = body["choices"][0]["message"]["content"]
+                if not content:
+                    raise ValueError("empty content")
+                chunk_result = PlaceExtraction.model_validate_json(content)
+            except (VertexThrottleError, VertexModelUnavailableError) as deepseek_error:
+                direct_deepseek_error = None
+                if os.getenv("DEEPSEEK_API_KEY", "").strip():
+                    try:
+                        chunk_result = extract_places_with_deepseek(
+                            chunk,
+                            historical_period,
+                        )
+                        fallback_provider = "direct_deepseek"
+                    except Exception as error:
+                        direct_deepseek_error = error
+                if not fallback_provider:
+                    try:
+                        chunk_result = _extract_places_with_vertex_gemini(
+                            chunk,
+                            historical_period,
+                            project,
+                            location,
+                        )
+                        fallback_provider = "vertex_gemini"
+                    except Exception as fallback_error:
+                        details = f"DeepSeek: {deepseek_error}; fallback: {fallback_error}"
+                        if direct_deepseek_error:
+                            details += f"; direct DeepSeek: {direct_deepseek_error}"
+                        raise RuntimeError(details) from fallback_error
+            except (KeyError, IndexError, TypeError, ValueError) as error:
+                raise RuntimeError(
+                    f"Vertex AI DeepSeek 第 {chunk_index}/{len(chunks)} 部分"
+                    "沒有返回可解析的地名 JSON。"
+                ) from error
 
         for item in sorted(chunk_result.places, key=lambda place: place.route_order):
             item.route_order = len(merged_places) + 1

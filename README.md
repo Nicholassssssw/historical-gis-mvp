@@ -94,14 +94,16 @@ VERTEX_LOCATION=global
 VERTEX_CHUNK_CHARS=24000
 VERTEX_WORDS_PER_READ=20000
 VERTEX_PROMPT_TOKENS_PER_READ=2600
-VERTEX_MAX_RETRIES=5
+VERTEX_MAX_RETRIES=1
 VERTEX_429_BASE_DELAY_SECONDS=10
 VERTEX_RETRY_BASE_DELAY_SECONDS=5
 VERTEX_RETRY_MAX_DELAY_SECONDS=60
 VERTEX_MIN_REQUEST_INTERVAL_SECONDS=2
+VERTEX_FALLBACK_MODEL=gemini-3.1-flash-lite
+VERTEX_FALLBACK_MAX_ATTEMPTS=5
 ```
 
-上載後，backend 會先完成字數統計，再按每次最多約 20,000 字及 24,000 字元硬上限決定實際閱讀次數；長文本會按段落／句界自動分批抽取，每批完成後保存進度，再把各批結果合併成全書 route order。若連線中斷，再按抽取會由下一個未完成批次續跑。Vertex AI 請求會排隊逐一發送並預設相隔最少 2 秒；暫時性 `429 / 500 / 503 / 504` 最多自動重試五次，遵從 `Retry-After`，否則使用最高 60 秒的漸進退避。
+上載後，backend 會先完成字數統計，再按每次最多約 20,000 字及 24,000 字元硬上限決定實際閱讀次數；長文本會按段落／句界自動分批抽取，每批完成後保存進度，再把各批結果合併成全書 route order。若連線中斷，再按抽取會由下一個未完成批次續跑。Vertex AI 請求會排隊逐一發送並預設相隔最少 2 秒。DeepSeek MaaS 遇到持續 429 時，會在一次漸進重試後自動轉用同一 Google Cloud project 的 `gemini-3.1-flash-lite`；如已設定 `DEEPSEEK_API_KEY`，則先嘗試直連 DeepSeek。成功轉用後，其餘分段會沿用後備 provider，保留相同 prompt、JSON schema、分段進度及前端流程。
 
 本機使用 Application Default Credentials：
 

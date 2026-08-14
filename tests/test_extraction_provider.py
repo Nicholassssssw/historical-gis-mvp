@@ -320,7 +320,7 @@ def test_vertex_error_message_reads_google_list_error_body():
     )
 
 
-def test_vertex_429_uses_five_truncated_exponential_retries(monkeypatch):
+def test_vertex_429_uses_one_retry_before_provider_fallback(monkeypatch):
     calls = 0
     sleeps = []
 
@@ -350,11 +350,68 @@ def test_vertex_429_uses_five_truncated_exponential_retries(monkeypatch):
     monkeypatch.setattr(extraction.httpx, "post", always_throttled)
     monkeypatch.setattr(extraction.time, "sleep", sleeps.append)
 
-    with pytest.raises(RuntimeError, match="自動重試 5 次"):
-        extraction.extract_places_with_vertex_deepseek("初一經臨安。", "明朝")
+    with pytest.raises(extraction.VertexThrottleError, match="自動重試 1 次"):
+        extraction._post_vertex_json("https://example.test", {"model": "test"})
 
-    assert calls == 6
-    assert sleeps == [10.0, 20.0, 40.0, 60.0, 60.0]
+    assert calls == 2
+    assert sleeps == [10.0]
+
+
+def test_vertex_429_falls_back_once_and_pins_working_provider(monkeypatch):
+    primary_calls = 0
+    fallback_calls = 0
+
+    def throttled_primary(*args, **kwargs):
+        nonlocal primary_calls
+        primary_calls += 1
+        raise extraction.VertexThrottleError("DeepSeek shared capacity exhausted")
+
+    def working_fallback(text, historical_period, project, location):
+        nonlocal fallback_calls
+        fallback_calls += 1
+        return extraction.PlaceExtraction.model_validate({
+            "places": [{
+                "route_order": 1,
+                "original_name": f"後備地名{fallback_calls}",
+                "normalized_name": f"後備地名{fallback_calls}",
+                "sentence": f"經後備地名{fallback_calls}",
+                "route_role": "passed",
+                "confidence": 0.9,
+            }]
+        })
+
+    monkeypatch.delenv("DEEPSEEK_API_KEY", raising=False)
+    monkeypatch.setattr(
+        extraction,
+        "_vertex_access_token_and_project",
+        lambda: ("token", "test-project"),
+    )
+    monkeypatch.setattr(extraction, "_post_vertex_json", throttled_primary)
+    monkeypatch.setattr(
+        extraction,
+        "_extract_places_with_vertex_gemini",
+        working_fallback,
+    )
+
+    result = extraction.extract_places_with_vertex_deepseek(
+        ("甲" * 900 + "。\n") * 3,
+        "明朝",
+        chunk_chars=1000,
+    )
+
+    assert primary_calls == 1
+    assert fallback_calls == 3
+    assert [place.original_name for place in result.places] == [
+        "後備地名1", "後備地名2", "後備地名3",
+    ]
+
+
+def test_direct_deepseek_fallback_uses_provider_specific_model(monkeypatch):
+    monkeypatch.setenv("LLM_PROVIDER", "google_vertex")
+    monkeypatch.setenv("LLM_MODEL", "deepseek-ai/deepseek-v3.2-maas")
+    monkeypatch.setenv("DEEPSEEK_MODEL", "deepseek-chat")
+
+    assert extraction._configured_model("deepseek") == "deepseek-chat"
 
 
 def test_extraction_prompt_keeps_places_from_research_documents():
