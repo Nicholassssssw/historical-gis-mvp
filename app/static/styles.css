@@ -23,7 +23,7 @@ button, .button-link { -webkit-tap-highlight-color: transparent; }
 .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; }
 
 .site-header { border-bottom: 1px solid rgba(220,222,214,.9); background: rgba(255,254,250,.86); backdrop-filter: blur(18px); position: sticky; top: 0; z-index: 20; }
-.header-inner { max-width: 1180px; margin: 0 auto; min-height: 70px; padding: 0 24px; display: flex; align-items: center; justify-content: space-between; gap: 20px; }
+.header-inner { max-width: 1240px; margin: 0 auto; min-height: 70px; padding: 0 24px; display: grid; grid-template-columns: max-content minmax(420px, 1fr) max-content; align-items: center; gap: 24px; }
 .brand { color: var(--ink); display: inline-flex; align-items: center; gap: 12px; text-decoration: none; }
 .brand-mark { width: 38px; height: 38px; border-radius: 11px; display: grid; place-items: center; background: var(--navy); color: white; font-size: 12px; font-weight: 800; letter-spacing: .08em; }
 .brand strong, .brand small { display: block; }
@@ -50,6 +50,10 @@ main { max-width: 1180px; margin: 0 auto; padding: 64px 24px 80px; }
 .progress-step.active > span { color: white; border-color: var(--accent); background: var(--accent); box-shadow: 0 0 0 5px rgba(8,127,106,.1); }
 .progress-step.completed > span { color: var(--accent); border-color: rgba(8,127,106,.32); background: #e8f5f1; }
 .progress-line { height: 1px; min-width: 24px; background: var(--line); }
+.header-progress { width: 100%; max-width: 590px; justify-self: center; margin: 0; padding: 0; border: 0; border-radius: 0; background: transparent; }
+.header-progress .progress-step { gap: 7px; }
+.header-progress .progress-step > span { width: 27px; height: 27px; }
+.header-progress .progress-step small { display: none; }
 
 .step-card { margin-bottom: 24px; padding: 30px; background: var(--paper); border: 1px solid var(--line); border-radius: 22px; box-shadow: var(--shadow); scroll-margin-top: 94px; }
 .step-heading { display: flex; align-items: end; justify-content: space-between; gap: 24px; padding-bottom: 22px; margin-bottom: 24px; border-bottom: 1px solid #e8e9e3; }
@@ -107,7 +111,7 @@ td input, td select, td textarea { padding: 8px; }
 .review-table th:nth-child(5) { width: 170px; }
 .review-table th:nth-child(6) { width: 520px; }
 .review-table th:nth-child(7) { width: 74px; }
-.role-check-cell { padding-top: 17px; text-align: center; }
+.role-check-cell { padding-top: 15px; text-align: center; }
 .role-filter-dropdown { position: relative; width: 100%; }
 .role-filter-dropdown summary { min-height: 34px; padding: 7px 30px 7px 10px; border: 1px solid #cdd3ce; border-radius: 8px; display: flex; align-items: center; color: var(--ink); background: #fff; font-size: 12px; font-weight: 750; cursor: pointer; list-style: none; }
 .role-filter-dropdown summary::-webkit-details-marker { display: none; }
@@ -118,6 +122,8 @@ td input, td select, td textarea { padding: 8px; }
 .role-filter-menu label:hover { background: #f0f7f4; }
 .role-filter-menu label > span { color: inherit; font-weight: 650; }
 .role-filter-check, .place-row-check { width: 16px; min-width: 16px; height: 16px; margin: 0; padding: 0; accent-color: var(--accent); cursor: pointer; }
+.place-row-selector { display: inline-flex; flex-direction: row; align-items: center; justify-content: center; gap: 7px; color: var(--ink); font-size: 12px; font-weight: 700; white-space: nowrap; cursor: pointer; }
+.place-row-selector > span { color: inherit; font-weight: inherit; }
 .delete-column, .delete-cell { text-align: center; }
 .delete-cell { padding-top: 17px; }
 .row-delete-button { min-height: 27px; padding: 5px 7px; border-radius: 7px; font-size: 10px; letter-spacing: 0; text-transform: none; }
@@ -147,25 +153,28 @@ footer { max-width: 1180px; margin: 0 auto 42px; padding: 0 24px; color: #78837f
 footer p { padding-top: 18px; border-top: 1px solid var(--line); }
 
 @media (max-width: 900px) {
+  .header-inner { grid-template-columns: 1fr max-content; gap: 10px 16px; padding-top: 10px; padding-bottom: 10px; }
+  .header-progress { grid-column: 1 / -1; grid-row: 2; max-width: none; }
   main { padding-top: 46px; }
   .progress { grid-template-columns: repeat(4, 1fr); gap: 8px; }
   .progress-line { display: none; }
-  .progress-step { flex-direction: column; align-items: flex-start; }
+  .progress-step { justify-content: center; }
   .progress-step small { display: none; }
+  .step-card { scroll-margin-top: 128px; }
   .upload-grid { grid-template-columns: 1fr 150px; }
   .file-field { grid-column: 1 / -1; }
   .map { height: 520px; }
 }
 
 @media (max-width: 640px) {
-  .header-inner { min-height: 62px; padding: 0 16px; }
+  .header-inner { min-height: 62px; padding: 9px 16px 10px; }
   .brand small { display: none; }
   .provider-pill { max-width: 150px; }
   .provider-pill span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   main { padding: 36px 12px 56px; }
   .intro { margin-bottom: 28px; padding: 0 4px; }
   .intro h1 { font-size: 36px; }
-  .progress { padding: 13px; border-radius: 14px; }
+  .progress { padding: 0; border-radius: 0; }
   .progress-step { gap: 6px; }
   .progress-step > span { width: 27px; height: 27px; }
   .progress-step strong { font-size: 11px; }

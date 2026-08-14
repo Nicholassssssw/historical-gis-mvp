@@ -26,6 +26,12 @@ function esc(v) {
   return String(v ?? "").replace(/[&<>'"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]));
 }
 
+function routeRoleLabel(routeRole) {
+  if (routeRole === 'passed_and_mentioned') return '經過及提及';
+  if (routeRole === 'mentioned_only') return '提及';
+  return '經過';
+}
+
 function markStep(activeStep) {
   $$('.progress-step').forEach(step => {
     const number = Number(step.dataset.step);
@@ -122,7 +128,7 @@ function renderPlaces(places) {
       <td><span class="readonly-value order-value">${p.route_order}</span></td>
       <td><span class="readonly-value">${esc(p.date_text || '—')}</span></td>
       <td><span class="readonly-value place-value">${esc(p.original_name)}</span></td>
-      <td class="role-check-cell"><input class="place-row-check" type="checkbox" ${selectedPlaceIds.has(p.id)?'checked':''} aria-label="選擇 ${esc(p.original_name)}"></td>
+      <td class="role-check-cell"><label class="place-row-selector"><input class="place-row-check" type="checkbox" ${selectedPlaceIds.has(p.id)?'checked':''} aria-label="選擇 ${esc(p.original_name)}（${routeRoleLabel(p.route_role)}）"><span>${routeRoleLabel(p.route_role)}</span></label></td>
       <td><input data-f="historical_region" value="${esc(p.historical_region)}" placeholder="可修改"></td>
       <td><span class="readonly-value sentence-value">${esc(p.sentence || '—')}</span></td>
       <td class="delete-cell"><button type="button" class="row-delete-button" data-action="delete-place" aria-label="刪除 ${esc(p.original_name)}">刪除</button></td>
