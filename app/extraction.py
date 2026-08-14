@@ -7,10 +7,8 @@ from pathlib import Path
 
 import google.auth
 import httpx
-from google import genai
 from google.auth.exceptions import DefaultCredentialsError
 from google.auth.transport.requests import Request as GoogleAuthRequest
-from google.genai import types
 
 from .schemas import PlaceExtraction
 from .text_metrics import count_words
@@ -19,7 +17,6 @@ PROMPT_PATH = Path(__file__).resolve().parent.parent / "prompts" / "extract_plac
 
 
 PROVIDER_DEFAULT_MODELS = {
-    "gemini": "gemini-3.5-flash-lite",
     "deepseek": "deepseek-v4-flash",
     "google_vertex": "deepseek-ai/deepseek-v3.2-maas",
 }
@@ -38,9 +35,15 @@ class VertexModelUnavailableError(RuntimeError):
 
 
 def configured_extraction_provider() -> str:
-    provider = os.getenv("LLM_PROVIDER", os.getenv("AI_PROVIDER", "gemini")).strip().lower()
+    provider = os.getenv(
+        "LLM_PROVIDER",
+        os.getenv("AI_PROVIDER", "google_vertex"),
+    ).strip().lower()
     if provider not in PROVIDER_DEFAULT_MODELS:
-        raise RuntimeError("LLM_PROVIDER 只支援 gemini、deepseek 或 google_vertex。")
+        raise RuntimeError(
+            "系統已鎖定為 DeepSeek-only；LLM_PROVIDER 只支援 "
+            "google_vertex 或 deepseek。"
+        )
     return provider
 
 
@@ -50,7 +53,6 @@ def _configured_model(provider: str) -> str:
     if generic_model and provider == configured_provider:
         return generic_model
     legacy_variable = {
-        "gemini": "GEMINI_MODEL",
         "deepseek": "DEEPSEEK_MODEL",
         "google_vertex": "VERTEX_MODEL",
     }[provider]
@@ -86,13 +88,7 @@ def extraction_provider_config() -> dict:
             "model": _configured_model(provider),
             "setup_message": "需要 DeepSeek API key",
         }
-    return {
-        "provider": provider,
-        "label": "Gemini",
-        "enabled": bool(os.getenv("GEMINI_API_KEY")),
-        "model": _configured_model(provider),
-        "setup_message": "需要 Gemini API key",
-    }
+    raise RuntimeError("系統已鎖定為 DeepSeek-only。")
 
 
 def _extraction_prompt(historical_period: str | None = None) -> str:
@@ -103,33 +99,6 @@ def _extraction_prompt(historical_period: str | None = None) -> str:
             f"年份／朝代 = {historical_period}. Use this only as dating context."
         )
     return prompt
-
-
-def extract_places_with_gemini(text: str, historical_period: str | None = None) -> PlaceExtraction:
-    api_key = os.getenv("GEMINI_API_KEY")
-    if not api_key:
-        raise RuntimeError("GEMINI_API_KEY 未設定。")
-
-    client = genai.Client(api_key=api_key)
-    prompt = _extraction_prompt(historical_period)
-    model = _configured_model("gemini")
-
-    # Structured Outputs: one extraction stage, one schema.
-    response = client.models.generate_content(
-        model=model,
-        contents=text,
-        config=types.GenerateContentConfig(
-            system_instruction=prompt,
-            response_mime_type="application/json",
-            response_schema=PlaceExtraction,
-        ),
-    )
-
-    if isinstance(response.parsed, PlaceExtraction):
-        return response.parsed
-    if response.text:
-        return PlaceExtraction.model_validate_json(response.text)
-    raise RuntimeError("Gemini 沒有返回可解析的地名結果。")
 
 
 def extract_places_with_deepseek(text: str, historical_period: str | None = None) -> PlaceExtraction:
@@ -387,64 +356,6 @@ def _post_vertex_json(endpoint: str, payload: dict) -> dict:
         raise last_error or RuntimeError("Vertex AI request failed.")
 
 
-def _extract_places_with_vertex_gemini(
-    text: str,
-    historical_period: str | None,
-    project: str,
-    location: str,
-) -> PlaceExtraction:
-    fallback_model = os.getenv(
-        "VERTEX_FALLBACK_MODEL",
-        "gemini-3.1-flash-lite",
-    ).strip()
-    if not fallback_model:
-        raise RuntimeError("VERTEX_FALLBACK_MODEL 未設定。")
-    attempts = max(
-        1,
-        min(10, int(os.getenv("VERTEX_FALLBACK_MAX_ATTEMPTS", "5"))),
-    )
-    client = genai.Client(
-        vertexai=True,
-        project=project,
-        location=location,
-        http_options=types.HttpOptions(
-            api_version="v1",
-            retry_options=types.HttpRetryOptions(
-                initial_delay=2.0,
-                attempts=attempts,
-                max_delay=60.0,
-                jitter=1.0,
-                http_status_codes=[408, 429, 500, 502, 503, 504],
-            ),
-            timeout=int(float(os.getenv("LLM_TIMEOUT_SECONDS", "300")) * 1000),
-        ),
-    )
-    try:
-        response = client.models.generate_content(
-            model=fallback_model,
-            contents=text,
-            config=types.GenerateContentConfig(
-                system_instruction=_extraction_prompt(historical_period),
-                response_mime_type="application/json",
-                response_schema=PlaceExtraction,
-                temperature=0.1,
-                max_output_tokens=int(os.getenv("LLM_MAX_TOKENS", "32768")),
-            ),
-        )
-    except Exception as error:
-        raise RuntimeError(
-            f"Vertex fallback {fallback_model} failed: {error}"
-        ) from error
-    finally:
-        client.close()
-
-    if isinstance(response.parsed, PlaceExtraction):
-        return response.parsed
-    if response.text:
-        return PlaceExtraction.model_validate_json(response.text)
-    raise RuntimeError(f"Vertex fallback {fallback_model} 沒有返回可解析結果。")
-
-
 def extract_places_with_vertex_deepseek(
     text: str,
     historical_period: str | None = None,
@@ -471,7 +382,7 @@ def extract_places_with_vertex_deepseek(
     if not 0 <= start_read <= len(chunks):
         raise RuntimeError("已儲存的閱讀進度與目前文件不一致，請重新上載文件。")
     merged_places = list(existing_places or [])
-    fallback_provider = None
+    use_direct_deepseek = False
 
     for zero_based_index in range(start_read, len(chunks)):
         chunk_index = zero_based_index + 1
@@ -489,17 +400,10 @@ def extract_places_with_vertex_deepseek(
             "max_tokens": int(os.getenv("LLM_MAX_TOKENS", "32768")),
             "stream": False,
         }
-        if fallback_provider == "direct_deepseek":
+        if use_direct_deepseek:
             chunk_result = extract_places_with_deepseek(
                 chunk,
                 historical_period,
-            )
-        elif fallback_provider == "vertex_gemini":
-            chunk_result = _extract_places_with_vertex_gemini(
-                chunk,
-                historical_period,
-                project,
-                location,
             )
         else:
             try:
@@ -509,30 +413,25 @@ def extract_places_with_vertex_deepseek(
                     raise ValueError("empty content")
                 chunk_result = PlaceExtraction.model_validate_json(content)
             except (VertexThrottleError, VertexModelUnavailableError) as deepseek_error:
-                direct_deepseek_error = None
                 if os.getenv("DEEPSEEK_API_KEY", "").strip():
                     try:
                         chunk_result = extract_places_with_deepseek(
                             chunk,
                             historical_period,
                         )
-                        fallback_provider = "direct_deepseek"
+                        use_direct_deepseek = True
                     except Exception as error:
-                        direct_deepseek_error = error
-                if not fallback_provider:
-                    try:
-                        chunk_result = _extract_places_with_vertex_gemini(
-                            chunk,
-                            historical_period,
-                            project,
-                            location,
-                        )
-                        fallback_provider = "vertex_gemini"
-                    except Exception as fallback_error:
-                        details = f"DeepSeek: {deepseek_error}; fallback: {fallback_error}"
-                        if direct_deepseek_error:
-                            details += f"; direct DeepSeek: {direct_deepseek_error}"
-                        raise RuntimeError(details) from fallback_error
+                        raise RuntimeError(
+                            "Vertex DeepSeek 無可用容量，直連 DeepSeek 亦失敗："
+                            f"Vertex DeepSeek: {deepseek_error}; "
+                            f"Direct DeepSeek: {error}"
+                        ) from error
+                else:
+                    raise RuntimeError(
+                        "Vertex DeepSeek 無可用容量，而系統已設定為只可使用 "
+                        "DeepSeek。請稍後重試，或設定 DEEPSEEK_API_KEY "
+                        "使用 DeepSeek 官方 API。"
+                    ) from deepseek_error
             except (KeyError, IndexError, TypeError, ValueError) as error:
                 raise RuntimeError(
                     f"Vertex AI DeepSeek 第 {chunk_index}/{len(chunks)} 部分"
@@ -554,4 +453,4 @@ def extract_places(text: str, historical_period: str | None = None) -> PlaceExtr
         return extract_places_with_vertex_deepseek(text, historical_period)
     if provider == "deepseek":
         return extract_places_with_deepseek(text, historical_period)
-    return extract_places_with_gemini(text, historical_period)
+    raise RuntimeError("系統已鎖定為 DeepSeek-only。")

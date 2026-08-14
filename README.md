@@ -2,13 +2,13 @@
 
 一個可直接部署的研究型 MVP：
 
-**Upload文本 → 可切換 LLM 抽取地名 → 用戶選擇經過/提及 → 用戶確認 → 多來源經緯度配對 → Generate GeoJSON map file → ArcGIS Maps SDK顯示 → 拖動/刪除點 → 路線自動更新。**
+**Upload文本 → DeepSeek 抽取地名 → 用戶選擇經過/提及 → 用戶確認 → 多來源經緯度配對 → Generate GeoJSON map file → ArcGIS Maps SDK顯示 → 拖動/刪除點 → 路線自動更新。**
 
 ## 1. 已實作流程
 
 1. 網站上載 `.txt / .md / .docx / .pdf`，可填寫年份／朝代
 2. Backend 抽取文字，顯示總字數及頁數（非 PDF 檔案按字數估算頁數）
-3. Vertex AI DeepSeek、Gemini 或 DeepSeek API 經同一個 provider layer 抽取，並回傳固定地名 schema
+3. 只使用 Vertex AI DeepSeek 或 DeepSeek 官方 API 抽取，並回傳固定地名 schema
 4. 網頁顯示地名 table；次序、日期、地名及原句只讀，用戶可以：
    - 選擇 `經過`、`提及` 或 `經過及提及`
    - 修改歷史區域
@@ -99,11 +99,9 @@ VERTEX_429_BASE_DELAY_SECONDS=10
 VERTEX_RETRY_BASE_DELAY_SECONDS=5
 VERTEX_RETRY_MAX_DELAY_SECONDS=60
 VERTEX_MIN_REQUEST_INTERVAL_SECONDS=2
-VERTEX_FALLBACK_MODEL=gemini-3.1-flash-lite
-VERTEX_FALLBACK_MAX_ATTEMPTS=5
 ```
 
-上載後，backend 會先完成字數統計，再按每次最多約 20,000 字及 24,000 字元硬上限決定實際閱讀次數；長文本會按段落／句界自動分批抽取，每批完成後保存進度，再把各批結果合併成全書 route order。若連線中斷，再按抽取會由下一個未完成批次續跑。Vertex AI 請求會排隊逐一發送並預設相隔最少 2 秒。DeepSeek MaaS 遇到持續 429 時，會在一次漸進重試後自動轉用同一 Google Cloud project 的 `gemini-3.1-flash-lite`；如已設定 `DEEPSEEK_API_KEY`，則先嘗試直連 DeepSeek。成功轉用後，其餘分段會沿用後備 provider，保留相同 prompt、JSON schema、分段進度及前端流程。
+上載後，backend 會先完成字數統計，再按每次最多約 20,000 字及 24,000 字元硬上限決定實際閱讀次數；長文本會按段落／句界自動分批抽取，每批完成後保存進度，再把各批結果合併成全書 route order。若連線中斷，再按抽取會由下一個未完成批次續跑。Vertex AI 請求會排隊逐一發送並預設相隔最少 2 秒。系統只使用 DeepSeek：DeepSeek MaaS 遇到持續 429 或模型不可用時，如已設定 `DEEPSEEK_API_KEY`，會改用 DeepSeek 官方 API；否則會停止並保留已完成分段，不會轉用 Gemini 或其他模型。
 
 本機使用 Application Default Credentials：
 
@@ -114,15 +112,7 @@ gcloud services enable aiplatform.googleapis.com --project=your-project-id
 
 Cloud Run 應使用執行服務帳戶及 IAM，不要把 service-account JSON 放入 repo。
 
-如要切回 Gemini，只需更改設定，不用改程式：
-
-```env
-LLM_PROVIDER=gemini
-LLM_MODEL=gemini-3.5-flash-lite
-GEMINI_API_KEY=...
-```
-
-亦保留直連 DeepSeek API 的 `LLM_PROVIDER=deepseek` 選項。
+如果有 DeepSeek 官方 API key，可以使用 `LLM_PROVIDER=deepseek`。系統不接受 Gemini 或其他 LLM provider。
 
 > 注意：Google Cloud 已於 2026-07-21 將 `deepseek-v3.2-maas` 標示為 deprecated，並列出 2026-10-21 retirement date。Provider/model 分離正是為了日後只改環境變數即可遷移。詳見 [Google Cloud open-model deprecations](https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/deprecations/open-models)。
 
@@ -224,7 +214,7 @@ POST /api/projects
     Upload file
 
 POST /api/projects/{id}/extract
-    Gemini extraction
+    DeepSeek extraction
 
 GET/PATCH/DELETE places
     Human review
@@ -244,7 +234,7 @@ GET /api/projects/{id}/map.geojson
 
 ## 10. Matching logic（MVP）
 
-目前 score 係 deterministic，而唔係再叫 Gemini 判坐標：
+目前 score 係 deterministic，而唔係再叫 LLM 判坐標：
 
 ```text
 58% name similarity
@@ -276,7 +266,7 @@ AGREEMENT_RADIUS_KM=5
 ## 12. 下一版最值得做
 
 1. 把你現有徐霞客人工成果 import 成 gold dataset
-2. 加地方志 search + 一次 Gemini gazetteer matching
+2. 加地方志 search + 一次 DeepSeek gazetteer matching
 3. DILA / CBDB / MCGD 正式 ingestion scripts
 4. route-context score（前後夾逼）
 5. background job queue，避免長文本/geocoding卡住 HTTP request

@@ -106,8 +106,6 @@ def config():
     return {
         "arcgis_api_key": os.getenv("ARCGIS_API_KEY", ""),
         "google_enabled": bool(os.getenv("GOOGLE_MAPS_API_KEY")),
-        "gemini_enabled": bool(os.getenv("GEMINI_API_KEY")),
-        "gemini_model": os.getenv("GEMINI_MODEL", "gemini-3.5-flash-lite"),
         "deepseek_enabled": bool(os.getenv("DEEPSEEK_API_KEY")),
         "deepseek_model": os.getenv("DEEPSEEK_MODEL", "deepseek-v4-flash"),
         "vertex_enabled": bool(os.getenv("GOOGLE_CLOUD_PROJECT")),
