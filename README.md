@@ -90,6 +90,7 @@ cp .env.example .env
 LLM_PROVIDER=google_vertex
 LLM_MODEL=deepseek-ai/deepseek-v3.2-maas
 GOOGLE_CLOUD_PROJECT=your-project-id
+GOOGLE_API_KEY=your-service-account-bound-project-key
 VERTEX_LOCATION=global
 VERTEX_CHUNK_CHARS=24000
 VERTEX_WORDS_PER_READ=20000
@@ -101,9 +102,9 @@ VERTEX_RETRY_MAX_DELAY_SECONDS=60
 VERTEX_MIN_REQUEST_INTERVAL_SECONDS=2
 ```
 
-上載後，backend 會先完成字數統計，再按每次最多約 20,000 字及 24,000 字元硬上限決定實際閱讀次數；長文本會按段落／句界自動分批抽取，每批完成後保存進度，再把各批結果合併成全書 route order。若連線中斷，再按抽取會由下一個未完成批次續跑。Vertex AI 請求會排隊逐一發送並預設相隔最少 2 秒。系統只使用 DeepSeek：DeepSeek MaaS 遇到持續 429 或模型不可用時，如已設定 `DEEPSEEK_API_KEY`，會改用 DeepSeek 官方 API；否則會停止並保留已完成分段，不會轉用 Gemini 或其他模型。
+上載後，backend 會先完成字數統計，再按每次最多約 20,000 字及 24,000 字元硬上限決定實際閱讀次數；長文本會按段落／句界自動分批抽取，每批完成後保存進度，再把各批結果合併成全書 route order。若連線中斷，再按抽取會由下一個未完成批次續跑。Vertex AI 請求會排隊逐一發送並預設相隔最少 2 秒。系統只使用 DeepSeek，連接優先次序為 `GOOGLE_API_KEY` → Google Cloud ADC → `DEEPSEEK_API_KEY`。Google Cloud 持續 429、權限失敗或連線中斷時，如已設定 `DEEPSEEK_API_KEY`，會改用 DeepSeek 官方 API；否則會停止並保留已完成分段，不會轉用其他模型。
 
-本機使用 Application Default Credentials：
+`GOOGLE_API_KEY` 要使用綁定 service account 的 Google Cloud project key，並在 API restrictions 允許 Vertex AI API (`aiplatform.googleapis.com`)。如 key 被限制，系統會在不暴露 key 的情況下改用 Application Default Credentials：
 
 ```bash
 gcloud auth application-default login

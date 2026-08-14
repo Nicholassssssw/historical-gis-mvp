@@ -69,16 +69,36 @@ def _vertex_credentials_detectable() -> bool:
     return True
 
 
+def _google_cloud_api_key() -> str:
+    """Return the Google project key without exposing it to clients or logs."""
+    return (
+        os.getenv("GOOGLE_API_KEY", "").strip()
+        or os.getenv("GOOGLE_CLOUD_API_KEY", "").strip()
+        # Backward compatibility for the key used before the DeepSeek-only switch.
+        or os.getenv("GEMINI_API_KEY", "").strip()
+    )
+
+
+def _vertex_auth_method() -> str:
+    if _google_cloud_api_key():
+        return "google_api_key"
+    if _vertex_credentials_detectable():
+        return "application_default_credentials"
+    return "unavailable"
+
+
 def extraction_provider_config() -> dict:
     provider = configured_extraction_provider()
     if provider == "google_vertex":
+        auth_method = _vertex_auth_method()
         return {
             "provider": provider,
             "label": "Vertex AI DeepSeek",
             "enabled": bool(os.getenv("GOOGLE_CLOUD_PROJECT"))
-            and _vertex_credentials_detectable(),
+            and auth_method != "unavailable",
             "model": _configured_model(provider),
-            "setup_message": "需要 Google Cloud 登入",
+            "auth_method": auth_method,
+            "setup_message": "需要 GOOGLE_API_KEY 或 Google Cloud 登入",
         }
     if provider == "deepseek":
         return {
@@ -86,6 +106,7 @@ def extraction_provider_config() -> dict:
             "label": "DeepSeek",
             "enabled": bool(os.getenv("DEEPSEEK_API_KEY")),
             "model": _configured_model(provider),
+            "auth_method": "deepseek_api_key",
             "setup_message": "需要 DeepSeek API key",
         }
     raise RuntimeError("系統已鎖定為 DeepSeek-only。")
@@ -169,6 +190,34 @@ def _vertex_access_token_and_project() -> tuple[str, str]:
     if not credentials.token:
         raise RuntimeError("Google Cloud access token 無法取得。")
     return credentials.token, project
+
+
+def _vertex_project() -> str:
+    project = os.getenv("GOOGLE_CLOUD_PROJECT", "").strip()
+    if project:
+        return project
+    try:
+        _, detected_project = google.auth.default(
+            scopes=["https://www.googleapis.com/auth/cloud-platform"]
+        )
+    except DefaultCredentialsError as error:
+        raise RuntimeError("GOOGLE_CLOUD_PROJECT 未設定。") from error
+    if not detected_project:
+        raise RuntimeError("GOOGLE_CLOUD_PROJECT 未設定。")
+    return detected_project
+
+
+def _vertex_request_headers(auth_method: str) -> dict[str, str]:
+    headers = {"Content-Type": "application/json; charset=utf-8"}
+    if auth_method == "google_api_key":
+        api_key = _google_cloud_api_key()
+        if not api_key:
+            raise RuntimeError("GOOGLE_API_KEY 未設定。")
+        headers["x-goog-api-key"] = api_key
+        return headers
+    access_token, _ = _vertex_access_token_and_project()
+    headers["Authorization"] = f"Bearer {access_token}"
+    return headers
 
 
 def _split_source_text(text: str, max_chars: int) -> list[str]:
@@ -298,21 +347,41 @@ def _wait_for_vertex_request_slot() -> None:
 
 def _post_vertex_json(endpoint: str, payload: dict) -> dict:
     max_retries = max(0, min(8, int(os.getenv("VERTEX_MAX_RETRIES", "1"))))
+    auth_method = (
+        "google_api_key" if _google_cloud_api_key()
+        else "application_default_credentials"
+    )
     with _VERTEX_REQUEST_LOCK:
         last_error = None
         for attempt in range(max_retries + 1):
             _wait_for_vertex_request_slot()
-            access_token, _ = _vertex_access_token_and_project()
             try:
                 response = httpx.post(
                     endpoint,
-                    headers={
-                        "Authorization": f"Bearer {access_token}",
-                        "Content-Type": "application/json; charset=utf-8",
-                    },
+                    headers=_vertex_request_headers(auth_method),
                     json=payload,
                     timeout=float(os.getenv("LLM_TIMEOUT_SECONDS", "300")),
                 )
+                # A restricted or incompatible project key must not prevent the
+                # same Google Cloud project from using its production-safe ADC.
+                if (
+                    auth_method == "google_api_key"
+                    and response.status_code in {401, 403}
+                ):
+                    try:
+                        adc_headers = _vertex_request_headers(
+                            "application_default_credentials"
+                        )
+                    except RuntimeError:
+                        pass
+                    else:
+                        auth_method = "application_default_credentials"
+                        response = httpx.post(
+                            endpoint,
+                            headers=adc_headers,
+                            json=payload,
+                            timeout=float(os.getenv("LLM_TIMEOUT_SECONDS", "300")),
+                        )
                 if (
                     response.status_code in RETRYABLE_VERTEX_STATUS_CODES
                     and attempt < max_retries
@@ -365,7 +434,7 @@ def extract_places_with_vertex_deepseek(
     chunk_chars: int | None = None,
     progress_callback=None,
 ) -> PlaceExtraction:
-    _, project = _vertex_access_token_and_project()
+    project = _vertex_project()
     location = os.getenv("VERTEX_LOCATION", "global").strip().lower()
     model = _configured_model("google_vertex")
     hostname = (
@@ -412,7 +481,7 @@ def extract_places_with_vertex_deepseek(
                 if not content:
                     raise ValueError("empty content")
                 chunk_result = PlaceExtraction.model_validate_json(content)
-            except (VertexThrottleError, VertexModelUnavailableError) as deepseek_error:
+            except RuntimeError as deepseek_error:
                 if os.getenv("DEEPSEEK_API_KEY", "").strip():
                     try:
                         chunk_result = extract_places_with_deepseek(
@@ -422,15 +491,15 @@ def extract_places_with_vertex_deepseek(
                         use_direct_deepseek = True
                     except Exception as error:
                         raise RuntimeError(
-                            "Vertex DeepSeek 無可用容量，直連 DeepSeek 亦失敗："
+                            "Google Cloud DeepSeek 失敗，直連 DeepSeek 亦失敗："
                             f"Vertex DeepSeek: {deepseek_error}; "
                             f"Direct DeepSeek: {error}"
                         ) from error
                 else:
                     raise RuntimeError(
-                        "Vertex DeepSeek 無可用容量，而系統已設定為只可使用 "
-                        "DeepSeek。請稍後重試，或設定 DEEPSEEK_API_KEY "
-                        "使用 DeepSeek 官方 API。"
+                        "Google Cloud DeepSeek 暫時無法完成請求，而系統已設定為"
+                        "只可使用 DeepSeek。請檢查 GOOGLE_API_KEY 對 Vertex AI "
+                        "API 的限制、稍後重試，或設定 DEEPSEEK_API_KEY。"
                     ) from deepseek_error
             except (KeyError, IndexError, TypeError, ValueError) as error:
                 raise RuntimeError(
