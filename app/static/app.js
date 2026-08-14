@@ -344,9 +344,9 @@ async function initMap() {
 }
 
 function pointSymbol(status) {
-  if (status === 'confirmed') return {type:'simple-marker', style:'circle', color:'#16845b', size:10, outline:{color:'white',width:1}};
-  if (status === 'possible') return {type:'simple-marker', style:'triangle', color:'#d97706', size:11, outline:{color:'white',width:1}};
-  return {type:'simple-marker', style:'circle', color:'#6b7280', size:8, outline:{color:'white',width:1}};
+  if (status === 'confirmed') return {type:'simple-marker', style:'circle', color:'#a3291b', size:10, outline:{color:'#f8ecd6',width:1}};
+  if (status === 'possible') return {type:'simple-marker', style:'triangle', color:'#c9962b', size:11, outline:{color:'#f8ecd6',width:1}};
+  return {type:'simple-marker', style:'circle', color:'#8a7a56', size:8, outline:{color:'#f8ecd6',width:1}};
 }
 
 function applyPointSymbol(g) { g.symbol = pointSymbol(g.attributes?.coord_class); }
@@ -359,7 +359,7 @@ function rebuildRoute() {
   const paths = [pts.map(g=>[g.geometry.longitude, g.geometry.latitude])];
   const g = new mapState.Graphic({
     geometry:{type:'polyline', paths, spatialReference:{wkid:4326}},
-    symbol:{type:'simple-line', color:'#315f9e', width:2},
+    symbol:{type:'simple-line', color:'#2c3c56', width:2},
     attributes:{name:'文本次序暫定路線'}
   });
   mapState.routeLayer.add(g);
