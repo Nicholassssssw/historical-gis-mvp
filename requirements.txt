@@ -4,6 +4,7 @@ python-multipart==0.0.20
 SQLAlchemy==2.0.43
 psycopg[binary]==3.2.9
 google-auth==2.56.3
+requests==2.34.2
 pydantic==2.13.4
 httpx==0.28.1
 python-docx==1.2.0
