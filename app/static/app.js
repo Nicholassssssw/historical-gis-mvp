@@ -283,16 +283,29 @@ $('#savePlacesBtn').addEventListener('click', async () => {
 });
 
 $('#confirmPlacesBtn').addEventListener('click', async () => {
+  if (selectedPlaceIds.size === 0) {
+    setStatus($('#placesStatus'), '請至少把一個地名選為「經過」或「經過及提及」。', true);
+    return;
+  }
+  setBusy($('#confirmPlacesBtn'), true, '確認中…');
   try {
     await saveAllPlaces();
-    const r = await api(`/api/projects/${projectId}/confirm-places`, {method:'POST'});
+    const r = await api(`/api/projects/${projectId}/confirm-places`, {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({place_ids:[...selectedPlaceIds]}),
+    });
     setStatus($('#placesStatus'), `✓ 已選擇 ${r.selected_count} 個路線地名；另有 ${r.mentioned_count} 個提及地名保留作參考。`);
     $('#confirmPlacesBtn').classList.add('hidden');
     $('#unconfirmPlacesBtn').classList.remove('hidden');
     $('#step3').classList.remove('hidden');
     markStep(3);
     $('#step3').scrollIntoView({behavior:'smooth'});
-  } catch (err) { setStatus($('#placesStatus'), err.message, true); }
+  } catch (err) {
+    setStatus($('#placesStatus'), err.message, true);
+  } finally {
+    setBusy($('#confirmPlacesBtn'), false, '確認中…');
+  }
 });
 
 $('#unconfirmPlacesBtn').addEventListener('click', async () => {
@@ -432,7 +445,7 @@ async function loadMapData() {
   if (!mapState.view) await initMap();
   const places = await api(`/api/projects/${projectId}/places`);
   mapState.pointLayer.removeAll();
-  for (const p of places.filter(p=>p.route_role !== 'mentioned_only' && p.selected_lon != null && p.selected_lat != null)) {
+  for (const p of places.filter(p=>p.user_selected && p.route_role !== 'mentioned_only' && p.selected_lon != null && p.selected_lat != null)) {
     const g = new mapState.Graphic({
       geometry:{type:'point', longitude:p.selected_lon, latitude:p.selected_lat, spatialReference:{wkid:4326}},
       attributes:{place_id:p.id, route_order:p.route_order, name:p.normalized_name, coord_class:p.coord_class, coord_source:p.coord_source},

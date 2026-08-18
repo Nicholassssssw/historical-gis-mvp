@@ -1,4 +1,3 @@
-from sqlalchemy import or_
 from sqlalchemy.orm import Session
 from .models import Place, Project
 from .place_roles import MAPPED_ROUTE_ROLES, normalize_route_role
@@ -10,9 +9,8 @@ def project_geojson(db: Session, project: Project):
         .filter(
             Place.project_id == project.id,
             Place.active == True,
+            Place.user_selected == True,
             Place.route_role.in_(MAPPED_ROUTE_ROLES),
-            or_(Place.gis_decision == None, Place.gis_decision == "retain"),
-            or_(Place.record_level == None, Place.record_level == "core"),
         )
         .order_by(Place.route_order)
         .all()

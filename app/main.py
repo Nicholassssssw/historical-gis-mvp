@@ -9,14 +9,19 @@ from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
-from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 load_dotenv()
 
 from .db import Base, SessionLocal, engine, ensure_compatibility_schema, get_db
 from .models import Candidate, Place, Project
-from .schemas import ExtractedPlace, PlaceBulkRouteRoleUpdate, PlaceCreate, PlaceUpdate
+from .schemas import (
+    ExtractedPlace,
+    PlaceBulkRouteRoleUpdate,
+    PlaceCreate,
+    PlaceSelectionConfirm,
+    PlaceUpdate,
+)
 from .file_parser import actual_page_count, extract_text
 from .extraction import (
     _split_source_text,
@@ -83,6 +88,7 @@ def place_dict(p: Place, include_candidates: bool = False):
         "coord_score": p.coord_score,
         "coord_source": p.coord_source,
         "manual_override": p.manual_override,
+        "user_selected": p.user_selected,
         "active": p.active,
     }
     if include_candidates:
@@ -278,6 +284,7 @@ def _perform_project_extraction(
             next_route_place=item.next_route_place,
             adjacency_type=item.adjacency_type,
             confidence=item.confidence,
+            user_selected=False,
             active=True,
         ))
     project.stage = "review_places"
@@ -403,6 +410,7 @@ def create_place(project_id: int, payload: PlaceCreate, db: Session = Depends(ge
         next_route_place=payload.next_route_place,
         adjacency_type=payload.adjacency_type,
         confidence=payload.confidence,
+        user_selected=False,
         active=True,
     )
     db.add(row)
@@ -440,20 +448,33 @@ def delete_place(place_id: int, db: Session = Depends(get_db)):
 
 
 @app.post("/api/projects/{project_id}/confirm-places")
-def confirm_places(project_id: int, db: Session = Depends(get_db)):
+def confirm_places(
+    project_id: int,
+    payload: PlaceSelectionConfirm,
+    db: Session = Depends(get_db),
+):
     project = project_or_404(db, project_id)
-    count = db.query(Place).filter(Place.project_id == project_id, Place.active == True).count()
-    if count == 0:
-        raise HTTPException(400, "沒有地名可確認。")
-    selected_count = db.query(Place).filter(
+    active_places = db.query(Place).filter(
         Place.project_id == project_id,
         Place.active == True,
-        Place.route_role.in_(MAPPED_ROUTE_ROLES),
-        or_(Place.gis_decision == None, Place.gis_decision == "retain"),
-        or_(Place.record_level == None, Place.record_level == "core"),
-    ).count()
+    ).all()
+    count = len(active_places)
+    if count == 0:
+        raise HTTPException(400, "沒有地名可確認。")
+
+    requested_ids = set(payload.place_ids)
+    active_ids = {place.id for place in active_places}
+    if requested_ids - active_ids:
+        raise HTTPException(400, "選取資料已經改變，請重新整理後再試。")
+    selected_count = sum(
+        place.id in requested_ids and place.route_role in MAPPED_ROUTE_ROLES
+        for place in active_places
+    )
     if selected_count == 0:
         raise HTTPException(400, "請至少把一個地名選為「經過」或「經過及提及」。")
+
+    for place in active_places:
+        place.user_selected = place.id in requested_ids
     project.places_confirmed = True
     project.stage = "places_confirmed"
     db.commit()
@@ -461,7 +482,10 @@ def confirm_places(project_id: int, db: Session = Depends(get_db)):
         "ok": True,
         "count": count,
         "selected_count": selected_count,
-        "mentioned_count": count - selected_count,
+        "mentioned_count": sum(
+            place.id in requested_ids and place.route_role not in MAPPED_ROUTE_ROLES
+            for place in active_places
+        ),
     }
 
 

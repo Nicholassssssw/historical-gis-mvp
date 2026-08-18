@@ -56,6 +56,12 @@ class PlaceBulkRouteRoleUpdate(BaseModel):
     place_ids: list[int] | None = None
 
 
+class PlaceSelectionConfirm(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    place_ids: list[int] = Field(default_factory=list)
+
+
 class PlaceCreate(BaseModel):
     route_order: int
     original_name: str

@@ -54,6 +54,7 @@ class Place(Base):
     coord_score: Mapped[float] = mapped_column(Float, default=0.0)
     coord_source: Mapped[str | None] = mapped_column(String(100), nullable=True)
     manual_override: Mapped[bool] = mapped_column(Boolean, default=False)
+    user_selected: Mapped[bool] = mapped_column(Boolean, default=False)
     active: Mapped[bool] = mapped_column(Boolean, default=True)
 
     project = relationship("Project", back_populates="places")
