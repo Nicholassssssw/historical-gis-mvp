@@ -112,14 +112,13 @@ $('#uploadForm').addEventListener('submit', async (e) => {
     return;
   }
   fd.append('file', f);
-  if ($('#title').value.trim()) fd.append('title', $('#title').value.trim());
   if ($('#dynasty').value.trim()) fd.append('historical_dynasty', $('#dynasty').value.trim());
   if ($('#historicalYear').value.trim()) fd.append('historical_year_text', $('#historicalYear').value.trim());
   try {
     const p = await api('/api/projects', {method:'POST', body:fd});
     projectId = p.id;
     currentExtractionPlan = p.extraction_plan;
-    $('#reviewTextTitle').textContent = p.title || p.filename || '—';
+    $('#reviewTextTitle').textContent = '等待 DeepSeek 搜尋';
     $('#reviewDynasty').textContent = p.historical_dynasty || '—';
     $('#reviewYear').textContent = p.historical_year_text || (p.historical_year ?? '—');
     setStatus($('#uploadStatus'), `已加入「${p.filename}」。下一步可抽取地名。`);
@@ -174,7 +173,7 @@ $('#extractBtn').addEventListener('click', async () => {
     });
     if (result.document_context) {
       const context = result.document_context;
-      $('#reviewTextTitle').textContent = context.title || '—';
+      $('#reviewTextTitle').textContent = context.title || '文本內未找到名稱';
       $('#reviewDynasty').textContent = context.historical_dynasty || '—';
       $('#reviewYear').textContent = context.historical_year_text || (context.historical_year ?? '—');
     }

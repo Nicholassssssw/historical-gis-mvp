@@ -47,7 +47,6 @@
         <p>支援 TXT、Markdown、Word 及文字型 PDF。</p>
       </div>
       <form id="uploadForm" class="upload-grid">
-        <label>文本名稱<input id="title" name="title" placeholder="例如：徐霞客浙遊日記" autocomplete="off" /></label>
         <label class="period-field">朝代<input id="dynasty" name="historical_dynasty" type="text" placeholder="例如：明朝" autocomplete="off" /></label>
         <label class="period-field">年份<input id="historicalYear" name="historical_year_text" type="text" placeholder="例如：1636 或崇禎九年" autocomplete="off" /></label>
         <label class="file-field">文本檔案<input id="file" name="file" type="file" accept=".txt,.md,.docx,.pdf" required /><span id="fileName">選擇檔案</span><small>掃描式 PDF 請先完成 OCR</small></label>
@@ -74,7 +73,7 @@
         <p>選擇每個地名屬於經過、提及或兩者。</p>
       </div>
       <dl class="document-context" aria-label="目前文本資料">
-        <div><dt>文本名稱</dt><dd id="reviewTextTitle">—</dd></div>
+        <div><dt>文本名稱</dt><dd id="reviewTextTitle">等待 DeepSeek 搜尋</dd></div>
         <div><dt>朝代</dt><dd id="reviewDynasty">—</dd></div>
         <div><dt>年份</dt><dd id="reviewYear">—</dd></div>
       </dl>

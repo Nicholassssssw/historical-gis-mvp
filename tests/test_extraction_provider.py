@@ -615,3 +615,5 @@ def test_extraction_prompt_keeps_places_from_research_documents():
     assert "historical_year_text" in prompt
     assert "目前來源文本本身，而不是正文引用的另一部書" in prompt
     assert "對應欄位必須輸出 null" in prompt
+    assert "historical_dynasty 必須填入該朝代" in prompt
+    assert "若年號曾由多個政權使用" in prompt

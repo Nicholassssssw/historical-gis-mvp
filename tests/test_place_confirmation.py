@@ -112,7 +112,27 @@ def test_detected_document_context_fills_only_omitted_upload_fields():
     assert project.historical_period == "朝代：明朝；年份：崇禎九年（1636）"
 
 
-def test_detected_document_context_never_overwrites_user_values():
+def test_detected_single_character_dynasty_is_normalized():
+    project = Project(
+        title="upload-file",
+        title_user_provided=False,
+        filename="upload-file.txt",
+        raw_text="崇禎九年，至杭州。",
+    )
+    result = PlaceExtraction.model_validate({
+        "document_title": None,
+        "historical_dynasty": "明",
+        "historical_year_text": "崇禎九年",
+        "places": [],
+    })
+
+    _apply_detected_document_context(project, result)
+
+    assert project.historical_dynasty == "明朝"
+    assert project.historical_period == "朝代：明朝；年份：崇禎九年"
+
+
+def test_detected_title_replaces_old_title_but_period_fields_keep_user_values():
     project = Project(
         title="使用者名稱",
         title_user_provided=True,
@@ -132,7 +152,7 @@ def test_detected_document_context_never_overwrites_user_values():
 
     _apply_detected_document_context(project, result)
 
-    assert project.title == "使用者名稱"
+    assert project.title == "《另一作品》"
     assert project.historical_dynasty == "明朝"
     assert project.historical_year_text == "1637"
     assert project.historical_year == 1637

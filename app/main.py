@@ -131,7 +131,6 @@ def config():
 @app.post("/api/projects")
 async def upload_project(
     file: Annotated[UploadFile, File(...)],
-    title: Annotated[str | None, Form()] = None,
     historical_period: Annotated[str | None, Form()] = None,
     historical_dynasty: Annotated[str | None, Form()] = None,
     historical_year_text: Annotated[str | None, Form()] = None,
@@ -145,7 +144,6 @@ async def upload_project(
     if not text.strip():
         raise HTTPException(400, "檔案未能抽取到文字。掃描PDF需要先做OCR。")
 
-    provided_title = (title or "").strip()[:255] or None
     legacy_period = (historical_period or "").strip()[:120] or None
     dynasty = (historical_dynasty or "").strip()[:50] or None
     year_text = (historical_year_text or "").strip()[:50] or None
@@ -161,8 +159,8 @@ async def upload_project(
     )
     extraction_plan = vertex_extraction_plan(text, metrics["word_count"])
     project = Project(
-        title=provided_title or Path(file.filename or "Untitled").stem,
-        title_user_provided=provided_title is not None,
+        title=Path(file.filename or "Untitled").stem,
+        title_user_provided=False,
         filename=file.filename or "upload",
         historical_year=numeric_year_from_period(year_text or legacy_period),
         historical_period=period,
@@ -193,16 +191,23 @@ def _clean_detected_metadata(value: str | None, max_length: int) -> str | None:
     return cleaned[:max_length] or None
 
 
+def _clean_detected_dynasty(value: str | None) -> str | None:
+    cleaned = _clean_detected_metadata(value, 120)
+    if cleaned in {"夏", "商", "周", "秦", "漢", "晋", "晉", "隋", "唐", "宋", "元", "明", "清"}:
+        return f"{cleaned}朝"
+    return cleaned
+
+
 def _apply_detected_document_context(
     project: Project,
     result: PlaceExtraction,
 ) -> None:
-    """Fill omitted upload metadata without replacing anything entered by a user."""
+    """Apply searched title and fill only omitted dynasty/year upload fields."""
     detected_title = _clean_detected_metadata(result.document_title, 255)
-    detected_dynasty = _clean_detected_metadata(result.historical_dynasty, 120)
+    detected_dynasty = _clean_detected_dynasty(result.historical_dynasty)
     detected_year_text = _clean_detected_metadata(result.historical_year_text, 120)
 
-    if not project.title_user_provided and detected_title:
+    if detected_title:
         project.title = detected_title
     if not project.historical_dynasty and detected_dynasty:
         project.historical_dynasty = detected_dynasty
@@ -348,7 +353,9 @@ def _perform_project_extraction(
     return {
         "count": len(extracted),
         "document_context": {
-            "title": project.title,
+            # The review screen must show only the model's source-text finding,
+            # never the upload filename or an older manually entered title.
+            "title": _clean_detected_metadata(result.document_title, 255),
             "historical_dynasty": project.historical_dynasty,
             "historical_year_text": project.historical_year_text,
             "historical_year": project.historical_year,
