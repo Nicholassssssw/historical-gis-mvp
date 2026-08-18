@@ -140,6 +140,7 @@ td input, td select, td textarea { padding: 8px; }
 .compact-table { margin-top: 16px; }
 #geoTable { min-width: 980px; }
 #geoTable th:first-child, #geoTable td:first-child { width: 48px; text-align: center; }
+#geoTable th:nth-child(2), #geoTable td:nth-child(2) { width: 76px; min-width: 76px; text-align: center; white-space: nowrap; }
 .coordinate-check-cell { vertical-align: middle; }
 .coordinate-row-check { width: 17px; min-width: 17px; height: 17px; margin: 0; padding: 0; accent-color: var(--accent); cursor: pointer; }
 .coordinate-row-check:disabled { cursor: not-allowed; opacity: .35; }

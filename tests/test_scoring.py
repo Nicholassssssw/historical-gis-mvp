@@ -7,6 +7,7 @@ from app import geocoder
 from app.db import Base
 from app.geocoder import haversine_km, name_similarity
 from app.models import Place, Project
+from app.providers import default_providers
 from app.providers.base import CandidateResult
 
 
@@ -17,6 +18,15 @@ def test_name_similarity():
 
 def test_haversine():
     assert haversine_km(120, 30, 120, 30) == 0
+
+
+def test_default_geocoding_sources_exclude_disabled_local_catalogs():
+    assert [provider.name for provider in default_providers()] == [
+        "CHGIS",
+        "Wikidata",
+        "OpenStreetMap",
+        "Google Places",
+    ]
 
 
 def test_geocoding_keeps_all_selected_records_and_reports_database_progress(monkeypatch):

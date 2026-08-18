@@ -116,7 +116,7 @@ def score_and_classify(place: Place, provider_results):
         return [], None, "insufficient", 0.0
 
     best = scored[0]
-    historical_direct = best["provider"].name in {"CHGIS", "DILA", "CBDB"} and best["name_score"] >= 0.82
+    historical_direct = best["provider"].name == "CHGIS" and best["name_score"] >= 0.82
     cross_agreement = best["agreement_count"] >= 1 and best["score"] >= confirmed_threshold
 
     if historical_direct or cross_agreement:

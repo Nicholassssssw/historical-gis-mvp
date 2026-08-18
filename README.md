@@ -37,7 +37,7 @@
 - **OpenStreetMap / Nominatim**：現代/地物 cross-check。
 - **Google Places (New)**：設定 `GOOGLE_MAPS_API_KEY` 後啟用；使用 Text Search。
 
-### Local catalog connectors（已實作）
+### Local catalog connectors（程式保留，暫停使用）
 
 以下來源適合先下載到自己 server，再透過統一 CSV 搜尋：
 
@@ -45,7 +45,7 @@
 - **CBDB historical addresses/places**
 - **Modern China Geospatial Database (MCGD)**
 
-將資料 normalize 成 `data/README_LOCAL_DATA.md` 所述格式即可自動加入 matching pipeline。
+相關讀取程式仍然保留，但 DILA、CBDB、MCGD 暫時不會加入 matching pipeline。
 
 ### 預留但未直接猜 API endpoint 的來源
 
@@ -244,7 +244,7 @@ GET /api/projects/{id}/map.geojson
 + cross-source coordinate agreement boost
 ```
 
-Historical direct match（CHGIS / DILA / CBDB）而名稱高度吻合，或者有多來源坐標在指定半徑內一致，可進入 `confirmed`。其餘按 threshold 分 `possible / insufficient`。
+Historical direct match（CHGIS）而名稱高度吻合，或者有多來源坐標在指定半徑內一致，可進入 `confirmed`。其餘按 threshold 分 `possible / insufficient`。
 
 Threshold 可在 `.env` 改：
 

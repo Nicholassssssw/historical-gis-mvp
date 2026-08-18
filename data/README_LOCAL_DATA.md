@@ -1,7 +1,7 @@
 # Optional local historical gazetteer catalogs
 
 The MVP can query CHGIS, Wikidata, OpenStreetMap/Nominatim and Google Places live.
-It can also search local CSV catalogs for DILA, CBDB and MCGD. Put the files in this folder or change the paths in `.env`.
+The local CSV reader for DILA, CBDB and MCGD is retained for possible future use, but these catalogs are currently disabled in the matching pipeline.
 
 Each CSV should contain at least the following normalized columns:
 
