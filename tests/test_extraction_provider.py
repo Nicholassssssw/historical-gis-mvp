@@ -593,4 +593,8 @@ def test_extraction_prompt_keeps_places_from_research_documents():
     assert 'route_role 必須是 "passed" 或 "mentioned_only"' in prompt
     assert "normalized_name 必須與 original_name 完全相同" in prompt
     assert "不得使用模型記憶" in prompt
-    assert "年份／朝代 = 明朝" in prompt
+    assert "在文本內搜尋歷史區域" in prompt
+    assert "同一日期段" in prompt
+    assert "搜尋只限本次提供的來源文本" in prompt
+    assert "使用者提供的文獻時期資料：明朝" in prompt
+    assert "不可單獨作為任何地名之 historical_region 證據" in prompt

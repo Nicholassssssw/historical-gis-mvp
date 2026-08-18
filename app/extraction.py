@@ -117,8 +117,9 @@ def _extraction_prompt(historical_period: str | None = None) -> str:
     prompt = PROMPT_PATH.read_text(encoding="utf-8")
     if historical_period:
         prompt += (
-            "\n\nDocument context supplied by the user: "
-            f"年份／朝代 = {historical_period}. Use this only as dating context."
+            "\n\n使用者提供的文獻時期資料："
+            f"{historical_period}。只可用作判斷時期的線索，"
+            "不可單獨作為任何地名之 historical_region 證據。"
         )
     return prompt
 

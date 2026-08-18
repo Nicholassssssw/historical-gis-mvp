@@ -18,6 +18,8 @@ def ensure_compatibility_schema():
     columns = {column["name"] for column in inspector.get_columns("projects")}
     project_additions = {
         "historical_period": "VARCHAR(120)",
+        "historical_dynasty": "VARCHAR(120)",
+        "historical_year_text": "VARCHAR(120)",
         "extraction_total_reads": "INTEGER DEFAULT 0",
         "extraction_completed_reads": "INTEGER DEFAULT 0",
         "extraction_chunk_chars": "INTEGER",

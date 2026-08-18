@@ -132,6 +132,8 @@ async def upload_project(
     file: Annotated[UploadFile, File(...)],
     title: Annotated[str | None, Form()] = None,
     historical_period: Annotated[str | None, Form()] = None,
+    historical_dynasty: Annotated[str | None, Form()] = None,
+    historical_year_text: Annotated[str | None, Form()] = None,
     db: Session = Depends(get_db),
 ):
     content = await file.read()
@@ -142,7 +144,15 @@ async def upload_project(
     if not text.strip():
         raise HTTPException(400, "檔案未能抽取到文字。掃描PDF需要先做OCR。")
 
-    period = (historical_period or "").strip()[:120] or None
+    legacy_period = (historical_period or "").strip()[:120] or None
+    dynasty = (historical_dynasty or "").strip()[:50] or None
+    year_text = (historical_year_text or "").strip()[:50] or None
+    period_parts = []
+    if dynasty:
+        period_parts.append(f"朝代：{dynasty}")
+    if year_text:
+        period_parts.append(f"年份：{year_text}")
+    period = "；".join(period_parts) or legacy_period
     metrics = document_metrics(
         text,
         actual_pages=actual_page_count(file.filename or "upload.txt", content),
@@ -151,8 +161,10 @@ async def upload_project(
     project = Project(
         title=title or Path(file.filename or "Untitled").stem,
         filename=file.filename or "upload",
-        historical_year=numeric_year_from_period(period),
+        historical_year=numeric_year_from_period(year_text or legacy_period),
         historical_period=period,
+        historical_dynasty=dynasty,
+        historical_year_text=year_text,
         raw_text=text,
         stage="uploaded",
         extraction_total_reads=extraction_plan["read_count"],
@@ -165,6 +177,8 @@ async def upload_project(
     return {"id": project.id, "title": project.title, "filename": project.filename,
             "historical_year": project.historical_year,
             "historical_period": project.historical_period,
+            "historical_dynasty": project.historical_dynasty,
+            "historical_year_text": project.historical_year_text,
             "stage": project.stage, "text_chars": len(project.raw_text),
             "extraction_plan": extraction_plan, **metrics}
 
@@ -356,6 +370,8 @@ def get_project(project_id: int, db: Session = Depends(get_db)):
     return {"id": p.id, "title": p.title, "filename": p.filename,
             "historical_year": p.historical_year,
             "historical_period": p.historical_period,
+            "historical_dynasty": p.historical_dynasty,
+            "historical_year_text": p.historical_year_text,
             "stage": p.stage,
             "places_confirmed": p.places_confirmed}
 

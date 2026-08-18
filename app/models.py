@@ -12,6 +12,8 @@ class Project(Base):
     filename: Mapped[str] = mapped_column(String(255), default="")
     historical_year: Mapped[int | None] = mapped_column(Integer, nullable=True)
     historical_period: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    historical_dynasty: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    historical_year_text: Mapped[str | None] = mapped_column(String(120), nullable=True)
     raw_text: Mapped[str] = mapped_column(Text)
     stage: Mapped[str] = mapped_column(String(50), default="uploaded")
     places_confirmed: Mapped[bool] = mapped_column(Boolean, default=False)
