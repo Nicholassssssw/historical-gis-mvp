@@ -1,18 +1,20 @@
 import json
 import os
+import queue
+import threading
 from pathlib import Path
 from typing import Annotated
 
 from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, UploadFile
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 load_dotenv()
 
-from .db import Base, engine, ensure_compatibility_schema, get_db
+from .db import Base, SessionLocal, engine, ensure_compatibility_schema, get_db
 from .models import Candidate, Place, Project
 from .schemas import ExtractedPlace, PlaceBulkRouteRoleUpdate, PlaceCreate, PlaceUpdate
 from .file_parser import actual_page_count, extract_text
@@ -161,8 +163,11 @@ async def upload_project(
             "extraction_plan": extraction_plan, **metrics}
 
 
-@app.post("/api/projects/{project_id}/extract")
-def run_extraction(project_id: int, db: Session = Depends(get_db)):
+def _perform_project_extraction(
+    project_id: int,
+    db: Session,
+    stream_callback=None,
+):
     project = project_or_404(db, project_id)
     extraction = extraction_provider_config()
     provider = configured_extraction_provider()
@@ -200,6 +205,13 @@ def run_extraction(project_id: int, db: Session = Depends(get_db)):
             )
             project.stage = "extracting"
             db.commit()
+            if stream_callback:
+                stream_callback({
+                    "event": "read_complete",
+                    "current_read": completed,
+                    "total_reads": total,
+                    "places_found": len(places),
+                })
 
     try:
         if provider == "google_vertex":
@@ -210,6 +222,7 @@ def run_extraction(project_id: int, db: Session = Depends(get_db)):
                 existing_places=existing_places,
                 chunk_chars=project.extraction_chunk_chars,
                 progress_callback=save_extraction_progress,
+                stream_callback=stream_callback,
             )
         else:
             result = extract_places(project.raw_text, project.historical_period)
@@ -273,6 +286,61 @@ def run_extraction(project_id: int, db: Session = Depends(get_db)):
     project.extraction_partial_json = None
     db.commit()
     return {"count": len(extracted), "places": [place_dict(p) for p in db.query(Place).filter(Place.project_id == project.id).order_by(Place.route_order).all()]}
+
+
+@app.post("/api/projects/{project_id}/extract")
+def run_extraction(project_id: int, db: Session = Depends(get_db)):
+    return _perform_project_extraction(project_id, db)
+
+
+@app.post("/api/projects/{project_id}/extract/stream")
+def run_extraction_stream(project_id: int):
+    """Forward Vertex token-stream progress to the browser as newline-delimited JSON."""
+    events = queue.Queue()
+    finished = object()
+
+    def publish(event):
+        events.put(event)
+
+    def work():
+        db = SessionLocal()
+        try:
+            result = _perform_project_extraction(
+                project_id,
+                db,
+                stream_callback=publish,
+            )
+            publish({"event": "complete", "result": result})
+        except HTTPException as error:
+            publish({"event": "error", "detail": str(error.detail)})
+        except Exception as error:
+            publish({"event": "error", "detail": str(error)})
+        finally:
+            db.close()
+            events.put(finished)
+
+    threading.Thread(target=work, daemon=True).start()
+
+    def response_events():
+        yield json.dumps({"event": "connected"}, ensure_ascii=False) + "\n"
+        while True:
+            try:
+                event = events.get(timeout=15)
+            except queue.Empty:
+                yield json.dumps({"event": "heartbeat"}) + "\n"
+                continue
+            if event is finished:
+                break
+            yield json.dumps(event, ensure_ascii=False) + "\n"
+
+    return StreamingResponse(
+        response_events(),
+        media_type="application/x-ndjson",
+        headers={
+            "Cache-Control": "no-cache, no-transform",
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 
 @app.get("/api/projects/{project_id}")

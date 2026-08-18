@@ -1,4 +1,5 @@
 import json
+from contextlib import contextmanager
 
 import httpx
 import pytest
@@ -15,9 +16,17 @@ def disable_vertex_pacing_during_tests(monkeypatch):
     monkeypatch.delenv("GOOGLE_CLOUD_API_KEY", raising=False)
     monkeypatch.delenv("GEMINI_API_KEY", raising=False)
 
+    @contextmanager
+    def fake_stream(method, url, **kwargs):
+        assert method == "POST"
+        yield extraction.httpx.post(url, **kwargs)
+
+    monkeypatch.setattr(extraction.httpx, "stream", fake_stream)
+
 
 class FakeDeepSeekResponse:
     status_code = 200
+    headers = {}
 
     def raise_for_status(self):
         return None
@@ -42,6 +51,13 @@ class FakeDeepSeekResponse:
                 }
             }]
         }
+
+    def iter_lines(self):
+        content = self.json()["choices"][0]["message"]["content"]
+        yield "data: " + json.dumps({
+            "choices": [{"delta": {"content": content}}]
+        }, ensure_ascii=False)
+        yield "data: [DONE]"
 
 
 def test_deepseek_json_output_is_validated(monkeypatch):
@@ -151,6 +167,68 @@ def test_vertex_deepseek_uses_adc_and_regional_openapi_endpoint(monkeypatch):
     assert captured["payload"]["model"] == "deepseek-ai/deepseek-v3.1-maas"
     assert captured["payload"]["response_format"] == {"type": "json_object"}
     assert captured["payload"]["messages"][0]["role"] == "user"
+    assert captured["payload"]["stream"] is True
+
+
+def test_vertex_stream_reassembles_sse_and_reports_received_characters(monkeypatch):
+    class FakeCredentials:
+        valid = True
+        token = "test-access-token"
+
+    response_json = json.dumps({
+        "places": [{
+            "route_order": 1,
+            "original_name": "杭州",
+            "normalized_name": "杭州",
+            "sentence": "至杭州。",
+            "route_role": "passed",
+            "confidence": 0.9,
+        }]
+    }, ensure_ascii=False)
+    split_at = len(response_json) // 2
+    captured = {}
+
+    class StreamingResponse:
+        status_code = 200
+        headers = {}
+
+        def raise_for_status(self):
+            return None
+
+        def iter_lines(self):
+            for part in (response_json[:split_at], response_json[split_at:]):
+                yield "data: " + json.dumps({
+                    "choices": [{"delta": {"content": part}}]
+                }, ensure_ascii=False)
+            yield "data: [DONE]"
+
+    @contextmanager
+    def fake_stream(method, url, **kwargs):
+        captured["payload"] = kwargs["json"]
+        yield StreamingResponse()
+
+    monkeypatch.setenv("GOOGLE_CLOUD_PROJECT", "test-project")
+    monkeypatch.setattr(
+        extraction.google.auth,
+        "default",
+        lambda **kwargs: (FakeCredentials(), "test-project"),
+    )
+    monkeypatch.setattr(extraction.httpx, "stream", fake_stream)
+    events = []
+
+    body = extraction._post_vertex_stream(
+        "https://example.test",
+        {"model": "deepseek-ai/deepseek-v3.2-maas", "stream": False},
+        progress_callback=events.append,
+    )
+
+    assert body["choices"][0]["message"]["content"] == response_json
+    assert captured["payload"]["stream"] is True
+    assert events[0] == {"event": "stream_started", "received_chars": 0}
+    assert events[-1] == {
+        "event": "stream_progress",
+        "received_chars": len(response_json),
+    }
 
 
 def test_vertex_deepseek_uses_google_project_key_before_adc(monkeypatch):

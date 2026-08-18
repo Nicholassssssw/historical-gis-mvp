@@ -1,3 +1,4 @@
+import json
 import os
 import random
 import re
@@ -345,51 +346,118 @@ def _wait_for_vertex_request_slot() -> None:
     _VERTEX_LAST_REQUEST_AT = time.monotonic()
 
 
-def _post_vertex_json(endpoint: str, payload: dict) -> dict:
+def _post_vertex_stream(endpoint: str, payload: dict, progress_callback=None) -> dict:
+    """Read an OpenAI-compatible Vertex response as SSE and rebuild its JSON body."""
     max_retries = max(0, min(8, int(os.getenv("VERTEX_MAX_RETRIES", "1"))))
     auth_method = (
         "google_api_key" if _google_cloud_api_key()
         else "application_default_credentials"
     )
+    stream_payload = {**payload, "stream": True}
     with _VERTEX_REQUEST_LOCK:
         last_error = None
-        for attempt in range(max_retries + 1):
+        attempt = 0
+        while attempt <= max_retries:
             _wait_for_vertex_request_slot()
             try:
-                response = httpx.post(
+                with httpx.stream(
+                    "POST",
                     endpoint,
                     headers=_vertex_request_headers(auth_method),
-                    json=payload,
+                    json=stream_payload,
                     timeout=float(os.getenv("LLM_TIMEOUT_SECONDS", "300")),
-                )
-                # A restricted or incompatible project key must not prevent the
-                # same Google Cloud project from using its production-safe ADC.
-                if (
-                    auth_method == "google_api_key"
-                    and response.status_code in {401, 403}
-                ):
-                    try:
-                        adc_headers = _vertex_request_headers(
-                            "application_default_credentials"
-                        )
-                    except RuntimeError:
-                        pass
-                    else:
-                        auth_method = "application_default_credentials"
-                        response = httpx.post(
-                            endpoint,
-                            headers=adc_headers,
-                            json=payload,
-                            timeout=float(os.getenv("LLM_TIMEOUT_SECONDS", "300")),
-                        )
-                if (
-                    response.status_code in RETRYABLE_VERTEX_STATUS_CODES
-                    and attempt < max_retries
-                ):
-                    time.sleep(_vertex_retry_delay(response, attempt))
-                    continue
-                response.raise_for_status()
-                return response.json()
+                ) as response:
+                    # A restricted project key must not prevent the same project
+                    # from using its production-safe Application Default Credentials.
+                    if (
+                        auth_method == "google_api_key"
+                        and response.status_code in {401, 403}
+                    ):
+                        response.read()
+                        try:
+                            _vertex_request_headers("application_default_credentials")
+                        except RuntimeError:
+                            pass
+                        else:
+                            auth_method = "application_default_credentials"
+                            continue
+
+                    if response.status_code in RETRYABLE_VERTEX_STATUS_CODES:
+                        response.read()
+                        if attempt < max_retries:
+                            delay = _vertex_retry_delay(response, attempt)
+                            if progress_callback:
+                                progress_callback({
+                                    "event": "retrying",
+                                    "attempt": attempt + 1,
+                                    "max_retries": max_retries,
+                                    "message": _vertex_error_message(response),
+                                })
+                            time.sleep(delay)
+                            attempt += 1
+                            continue
+
+                    if response.status_code >= 400:
+                        response.read()
+                    response.raise_for_status()
+                    if progress_callback:
+                        progress_callback({"event": "stream_started", "received_chars": 0})
+
+                    content_parts = []
+                    received_chars = 0
+                    last_reported_chars = 0
+                    last_reported_at = time.monotonic()
+                    for line in response.iter_lines():
+                        if not line or line.startswith(":"):
+                            continue
+                        raw_event = line[5:].strip() if line.startswith("data:") else line.strip()
+                        if not raw_event:
+                            continue
+                        if raw_event == "[DONE]":
+                            break
+                        try:
+                            event = json.loads(raw_event)
+                        except ValueError:
+                            continue
+                        if isinstance(event, dict) and event.get("error"):
+                            error = event["error"]
+                            message = error.get("message") if isinstance(error, dict) else str(error)
+                            raise RuntimeError(f"Vertex AI stream error: {message or 'request failed'}")
+
+                        choices = event.get("choices") if isinstance(event, dict) else None
+                        if not choices:
+                            continue
+                        choice = choices[0] if isinstance(choices[0], dict) else {}
+                        delta = choice.get("delta") or {}
+                        delta_content = delta.get("content") if isinstance(delta, dict) else None
+                        if not delta_content and not content_parts:
+                            message = choice.get("message") or {}
+                            delta_content = message.get("content") if isinstance(message, dict) else None
+                        if not isinstance(delta_content, str) or not delta_content:
+                            continue
+                        content_parts.append(delta_content)
+                        received_chars += len(delta_content)
+                        now = time.monotonic()
+                        if progress_callback and (
+                            received_chars - last_reported_chars >= 256
+                            or now - last_reported_at >= 0.5
+                        ):
+                            progress_callback({
+                                "event": "stream_progress",
+                                "received_chars": received_chars,
+                            })
+                            last_reported_chars = received_chars
+                            last_reported_at = now
+
+                    content = "".join(content_parts)
+                    if progress_callback and received_chars != last_reported_chars:
+                        progress_callback({
+                            "event": "stream_progress",
+                            "received_chars": received_chars,
+                        })
+                    if not content:
+                        raise RuntimeError("Vertex AI 串流完成，但沒有返回內容。")
+                    return {"choices": [{"message": {"content": content}}]}
             except httpx.HTTPStatusError as error:
                 message = _vertex_error_message(error.response)
                 if error.response.status_code == 429:
@@ -411,18 +479,32 @@ def _post_vertex_json(endpoint: str, payload: dict) -> dict:
                     and attempt < max_retries
                 ):
                     time.sleep(_vertex_retry_delay(error.response, attempt))
+                    attempt += 1
                     continue
                 raise last_error from error
             except httpx.HTTPError as error:
                 last_error = RuntimeError(f"Vertex AI connection failed: {error}")
                 if attempt < max_retries:
                     retry_response = getattr(error, "response", None)
+                    if progress_callback:
+                        progress_callback({
+                            "event": "retrying",
+                            "attempt": attempt + 1,
+                            "max_retries": max_retries,
+                            "message": str(error),
+                        })
                     time.sleep(_vertex_retry_delay(retry_response, attempt))
+                    attempt += 1
                     continue
                 raise last_error from error
             except ValueError as error:
                 raise RuntimeError("Vertex AI 沒有返回合法 JSON response。") from error
         raise last_error or RuntimeError("Vertex AI request failed.")
+
+
+def _post_vertex_json(endpoint: str, payload: dict, progress_callback=None) -> dict:
+    """Compatibility wrapper retained for callers that do not need live progress."""
+    return _post_vertex_stream(endpoint, payload, progress_callback=progress_callback)
 
 
 def extract_places_with_vertex_deepseek(
@@ -433,6 +515,7 @@ def extract_places_with_vertex_deepseek(
     existing_places: list | None = None,
     chunk_chars: int | None = None,
     progress_callback=None,
+    stream_callback=None,
 ) -> PlaceExtraction:
     project = _vertex_project()
     location = os.getenv("VERTEX_LOCATION", "us-west2").strip().lower()
@@ -467,7 +550,7 @@ def extract_places_with_vertex_deepseek(
             "response_format": {"type": "json_object"},
             "temperature": 0.1,
             "max_tokens": int(os.getenv("LLM_MAX_TOKENS", "32768")),
-            "stream": False,
+            "stream": True,
         }
         if use_direct_deepseek:
             chunk_result = extract_places_with_deepseek(
@@ -476,7 +559,19 @@ def extract_places_with_vertex_deepseek(
             )
         else:
             try:
-                body = _post_vertex_json(endpoint, payload)
+                def report_stream_progress(event):
+                    if stream_callback:
+                        stream_callback({
+                            **event,
+                            "current_read": chunk_index,
+                            "total_reads": len(chunks),
+                        })
+
+                body = _post_vertex_json(
+                    endpoint,
+                    payload,
+                    progress_callback=report_stream_progress,
+                )
                 content = body["choices"][0]["message"]["content"]
                 if not content:
                     raise ValueError("empty content")

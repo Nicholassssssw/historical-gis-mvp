@@ -17,6 +17,44 @@ async function api(url, options={}) {
   return data;
 }
 
+async function streamApi(url, onEvent) {
+  const res = await fetch(url, {method:'POST'});
+  if (!res.ok) {
+    const text = await res.text();
+    let data;
+    try { data = text ? JSON.parse(text) : {}; } catch { data = {detail:text}; }
+    throw new Error(data.detail || `HTTP ${res.status}`);
+  }
+  if (!res.body) throw new Error('瀏覽器未能接收串流回應。');
+
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+  let result = null;
+
+  const handleLine = line => {
+    if (!line.trim()) return;
+    let event;
+    try { event = JSON.parse(line); }
+    catch { throw new Error('收到無法解析的抽取進度。'); }
+    onEvent?.(event);
+    if (event.event === 'error') throw new Error(event.detail || '地名抽取失敗。');
+    if (event.event === 'complete') result = event.result;
+  };
+
+  while (true) {
+    const {value, done} = await reader.read();
+    buffer += decoder.decode(value || new Uint8Array(), {stream:!done});
+    const lines = buffer.split('\n');
+    buffer = lines.pop() || '';
+    for (const line of lines) handleLine(line);
+    if (done) break;
+  }
+  if (buffer.trim()) handleLine(buffer);
+  if (!result) throw new Error('抽取連線已結束，但未收到完成結果。');
+  return result;
+}
+
 function setStatus(el, msg, error=false) {
   el.textContent = msg || "";
   el.classList.toggle("error", error);
@@ -104,7 +142,32 @@ $('#extractBtn').addEventListener('click', async () => {
     : '';
   setStatus($('#uploadStatus'), `${providerLabel} 正在辨識路線地名${batchNote}…`);
   try {
-    const result = await api(`/api/projects/${projectId}/extract`, {method:'POST'});
+    const result = await streamApi(`/api/projects/${projectId}/extract/stream`, event => {
+      const readSuffix = event.total_reads > 1
+        ? `（第 ${event.current_read}/${event.total_reads} 次閱讀）`
+        : '';
+      if (event.event === 'stream_started') {
+        setStatus(
+          $('#uploadStatus'),
+          `Vertex AI 已開始回應${readSuffix}\n已接收 0 字符\n模型仍在生成……`,
+        );
+      } else if (event.event === 'stream_progress') {
+        setStatus(
+          $('#uploadStatus'),
+          `Vertex AI 已開始回應${readSuffix}\n已接收 ${Number(event.received_chars || 0).toLocaleString()} 字符\n模型仍在生成……`,
+        );
+      } else if (event.event === 'retrying') {
+        setStatus(
+          $('#uploadStatus'),
+          `Vertex AI 串流暫時中斷${readSuffix}\n正在自動重試 ${event.attempt}/${event.max_retries}……`,
+        );
+      } else if (event.event === 'read_complete' && event.total_reads > 1) {
+        setStatus(
+          $('#uploadStatus'),
+          `已完成第 ${event.current_read}/${event.total_reads} 次閱讀，暫時找到 ${event.places_found} 個地名。\n正在準備下一次閱讀……`,
+        );
+      }
+    });
     currentPlaces = result.places;
     selectedPlaceIds.clear();
     renderPlaces(currentPlaces);
