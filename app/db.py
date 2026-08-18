@@ -51,6 +51,7 @@ def ensure_compatibility_schema():
         "next_route_place": "VARCHAR(255)",
         "adjacency_type": "VARCHAR(40)",
         "user_selected": "BOOLEAN DEFAULT 0",
+        "coordinate_selected": "BOOLEAN DEFAULT 0",
     }
     missing = {name: sql_type for name, sql_type in additions.items() if name not in place_columns}
     if missing:

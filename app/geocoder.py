@@ -5,7 +5,6 @@ import os
 from difflib import SequenceMatcher
 from sqlalchemy.orm import Session
 from .models import Candidate, Place, Project
-from .place_roles import MAPPED_ROUTE_ROLES
 from .providers import default_providers
 
 
@@ -33,17 +32,54 @@ def haversine_km(lon1, lat1, lon2, lat2):
     return 2 * r * math.asin(math.sqrt(a))
 
 
-async def query_candidates(place: Place, project: Project, bias=None):
+async def query_candidates(
+    place: Place,
+    project: Project,
+    bias=None,
+    progress_callback=None,
+    progress_context=None,
+):
     providers = default_providers()
-    tasks = [p.search(place.normalized_name or place.original_name,
-                      year=project.historical_year,
-                      region=place.historical_region,
-                      bias=bias) for p in providers]
-    results = await asyncio.gather(*tasks, return_exceptions=True)
+    context = progress_context or {}
+    provider_names = [provider.name for provider in providers]
+    if progress_callback:
+        progress_callback({
+            "event": "databases_started",
+            "databases": provider_names,
+            **context,
+        })
+
+    async def search_provider(provider):
+        try:
+            result = await provider.search(
+                place.normalized_name or place.original_name,
+                year=project.historical_year,
+                region=place.historical_region,
+                bias=bias,
+            )
+            if progress_callback:
+                progress_callback({
+                    "event": "database_complete",
+                    "database": provider.name,
+                    "candidate_count": len(result),
+                    "ok": True,
+                    **context,
+                })
+            return result
+        except Exception:
+            if progress_callback:
+                progress_callback({
+                    "event": "database_complete",
+                    "database": provider.name,
+                    "candidate_count": 0,
+                    "ok": False,
+                    **context,
+                })
+            return []
+
+    results = await asyncio.gather(*(search_provider(provider) for provider in providers))
     merged = []
     for provider, result in zip(providers, results):
-        if isinstance(result, Exception):
-            continue
         for c in result:
             merged.append((provider, c))
     return merged
@@ -93,19 +129,32 @@ def score_and_classify(place: Place, provider_results):
     return scored, best, cls, float(best["score"])
 
 
-async def geocode_project(db: Session, project: Project):
+async def geocode_project(db: Session, project: Project, progress_callback=None):
     places = db.query(Place).filter(
         Place.project_id == project.id,
         Place.active == True,
         Place.user_selected == True,
-        Place.route_role.in_(MAPPED_ROUTE_ROLES),
     ).order_by(Place.route_order).all()
     previous_bias = None
     summary = []
 
-    for place in places:
+    for place_index, place in enumerate(places, start=1):
+        progress_context = {
+            "current_place": place_index,
+            "total_places": len(places),
+            "place_id": place.id,
+            "place_name": place.normalized_name,
+        }
+        if progress_callback:
+            progress_callback({"event": "place_started", **progress_context})
         db.query(Candidate).filter(Candidate.place_id == place.id).delete()
-        provider_results = await query_candidates(place, project, bias=previous_bias)
+        provider_results = await query_candidates(
+            place,
+            project,
+            bias=previous_bias,
+            progress_callback=progress_callback,
+            progress_context=progress_context,
+        )
         scored, best, cls, best_score = score_and_classify(place, provider_results)
 
         persisted = []
@@ -139,6 +188,7 @@ async def geocode_project(db: Session, project: Project):
             place.coord_source = best_candidate_row.source
             place.coord_score = best_score
             place.coord_class = cls
+            place.coordinate_selected = cls == "confirmed"
             if cls in {"confirmed", "possible"}:
                 previous_bias = (place.selected_lon, place.selected_lat)
         else:
@@ -147,9 +197,10 @@ async def geocode_project(db: Session, project: Project):
             place.coord_source = None
             place.coord_score = 0.0
             place.coord_class = "insufficient"
+            place.coordinate_selected = False
 
         db.commit()
-        summary.append({
+        result_row = {
             "place_id": place.id,
             "route_order": place.route_order,
             "name": place.normalized_name,
@@ -158,8 +209,16 @@ async def geocode_project(db: Session, project: Project):
             "source": place.coord_source,
             "lon": place.selected_lon,
             "lat": place.selected_lat,
+            "coordinate_selected": place.coordinate_selected,
             "candidates": [candidate_to_dict(x) for x in persisted[:10]],
-        })
+        }
+        summary.append(result_row)
+        if progress_callback:
+            progress_callback({
+                "event": "place_complete",
+                "result": result_row,
+                **progress_context,
+            })
     return summary
 
 

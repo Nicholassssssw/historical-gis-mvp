@@ -12,7 +12,7 @@
   <link rel="preconnect" href="https://js.arcgis.com" />
   <link rel="stylesheet" href="https://js.arcgis.com/5.1/esri/themes/light/main.css" />
   <script type="module" src="https://js.arcgis.com/5.1/"></script>
-  <link rel="stylesheet" href="/static/styles.css?v=20260818-4" />
+  <link rel="stylesheet" href="/static/styles.css?v=20260818-5" />
 </head>
 <body>
   <header class="site-header">
@@ -116,14 +116,17 @@
         <p>綜合歷史與現代來源；每個候選都保留出處和分數。</p>
       </div>
       <div class="source-strip" aria-label="Coordinate sources">
-        <span>CHGIS</span><span>Wikidata</span><span>OpenStreetMap</span><span>Local catalogues</span>
+        <span>CHGIS</span><span>DILA</span><span>CBDB</span><span>MCGD</span><span>Wikidata</span><span>OpenStreetMap</span><span>Google Places</span>
       </div>
-      <div class="toolbar"><button id="geocodeBtn" class="button-accent">開始坐標配對</button></div>
+      <div class="toolbar">
+        <button id="geocodeBtn" class="button-accent">開始坐標配對</button>
+        <button id="confirmCoordinatesBtn" class="button-accent hidden" disabled>確認座標</button>
+      </div>
       <div class="status" id="geoStatus" aria-live="polite"></div>
       <div class="table-wrap compact-table">
         <table id="geoTable">
           <thead><tr>
-            <th>次序</th><th>地名</th><th>分類</th><th>分數</th><th>來源</th><th>經度</th><th>緯度</th><th>改用候選</th>
+            <th class="coordinate-check-column"><span class="sr-only">選取</span></th><th>次序</th><th>地名</th><th>分類</th><th>分數</th><th>來源</th><th>經度</th><th>緯度</th><th>改用候選</th>
           </tr></thead>
           <tbody></tbody>
         </table>
@@ -158,6 +161,6 @@
     <p><strong>研究提示</strong>　坐標分類反映現有來源與規則，並不等同歷史位置的最終證明。</p>
   </footer>
 
-  <script type="module" src="/static/app.js?v=20260818-4"></script>
+  <script type="module" src="/static/app.js?v=20260818-5"></script>
 </body>
 </html>

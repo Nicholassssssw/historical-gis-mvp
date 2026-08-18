@@ -4,9 +4,9 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from app.db import Base
-from app.main import _apply_detected_document_context, confirm_places
+from app.main import _apply_detected_document_context, confirm_coordinates, confirm_places
 from app.models import Place, Project
-from app.schemas import PlaceExtraction, PlaceSelectionConfirm
+from app.schemas import CoordinateSelectionConfirm, PlaceExtraction, PlaceSelectionConfirm
 
 
 @pytest.fixture
@@ -185,3 +185,30 @@ def test_unverified_upload_hints_are_not_used_as_final_metadata():
     assert project.historical_year_text is None
     assert project.historical_year is None
     assert project.historical_period is None
+
+
+def test_coordinate_confirmation_keeps_only_checked_places_for_mapping(db):
+    project, passed, mentioned = make_project_with_places(db)
+    project.places_confirmed = True
+    passed.user_selected = True
+    passed.selected_lon = 120.15
+    passed.selected_lat = 30.28
+    passed.coordinate_selected = True
+    mentioned.user_selected = True
+    mentioned.selected_lon = 119.4
+    mentioned.selected_lat = 30.3
+    mentioned.coordinate_selected = True
+    db.commit()
+
+    result = confirm_coordinates(
+        project.id,
+        CoordinateSelectionConfirm(place_ids=[passed.id]),
+        db,
+    )
+
+    db.refresh(passed)
+    db.refresh(mentioned)
+    assert result["selected_count"] == 1
+    assert passed.coordinate_selected is True
+    assert mentioned.coordinate_selected is False
+    assert project.stage == "coordinates_confirmed"

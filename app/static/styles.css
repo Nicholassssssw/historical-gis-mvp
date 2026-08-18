@@ -138,6 +138,11 @@ td input, td select, td textarea { padding: 8px; }
 .place-value { color: var(--ink); font-weight: 750; }
 .sentence-value { max-height: 7.5em; overflow: auto; }
 .compact-table { margin-top: 16px; }
+#geoTable { min-width: 980px; }
+#geoTable th:first-child, #geoTable td:first-child { width: 48px; text-align: center; }
+.coordinate-check-cell { vertical-align: middle; }
+.coordinate-row-check { width: 17px; min-width: 17px; height: 17px; margin: 0; padding: 0; accent-color: var(--accent); cursor: pointer; }
+.coordinate-row-check:disabled { cursor: not-allowed; opacity: .35; }
 .badge { display: inline-flex; align-items: center; padding: 4px 8px; border-radius: 999px; white-space: nowrap; font-size: 10px; font-weight: 800; }
 .badge.confirmed { color: #06604f; background: #dff4ed; }
 .badge.possible { color: #8a5600; background: #fff0cc; }

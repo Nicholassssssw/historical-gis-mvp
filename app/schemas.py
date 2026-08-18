@@ -65,6 +65,12 @@ class PlaceSelectionConfirm(BaseModel):
     place_ids: list[int] = Field(default_factory=list)
 
 
+class CoordinateSelectionConfirm(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    place_ids: list[int] = Field(default_factory=list)
+
+
 class PlaceCreate(BaseModel):
     route_order: int
     original_name: str

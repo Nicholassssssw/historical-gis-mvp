@@ -2,6 +2,8 @@ let projectId = null;
 let config = {};
 let currentPlaces = [];
 let selectedPlaceIds = new Set();
+let currentGeocodeResults = [];
+let selectedCoordinatePlaceIds = new Set();
 let currentExtractionPlan = null;
 let mapState = { view:null, pointLayer:null, routeLayer:null, sketch:null, selectedGraphic:null, fullscreenCleanup:null };
 
@@ -36,9 +38,9 @@ async function streamApi(url, onEvent) {
     if (!line.trim()) return;
     let event;
     try { event = JSON.parse(line); }
-    catch { throw new Error('收到無法解析的抽取進度。'); }
+    catch { throw new Error('收到無法解析的處理進度。'); }
     onEvent?.(event);
-    if (event.event === 'error') throw new Error(event.detail || '地名抽取失敗。');
+    if (event.event === 'error') throw new Error(event.detail || '處理失敗。');
     if (event.event === 'complete') result = event.result;
   };
 
@@ -51,7 +53,7 @@ async function streamApi(url, onEvent) {
     if (done) break;
   }
   if (buffer.trim()) handleLine(buffer);
-  if (!result) throw new Error('抽取連線已結束，但未收到完成結果。');
+  if (!result) throw new Error('連線已結束，但未收到完成結果。');
   return result;
 }
 
@@ -326,6 +328,11 @@ $('#unconfirmPlacesBtn').addEventListener('click', async () => {
     $('#confirmPlacesBtn').classList.remove('hidden');
     $('#unconfirmPlacesBtn').classList.add('hidden');
     $('#step3').classList.add('hidden');
+    $('#step4').classList.add('hidden');
+    $('#confirmCoordinatesBtn').classList.add('hidden');
+    currentGeocodeResults = [];
+    selectedCoordinatePlaceIds.clear();
+    $('#geoTable tbody').innerHTML = '';
     markStep(2);
     setStatus($('#placesStatus'), '已取消確認，可以再次選擇地名。');
   } catch (err) { setStatus($('#placesStatus'), err.message, true); }
@@ -333,15 +340,48 @@ $('#unconfirmPlacesBtn').addEventListener('click', async () => {
 
 $('#geocodeBtn').addEventListener('click', async () => {
   setBusy($('#geocodeBtn'), true, '正在配對…');
-  setStatus($('#geoStatus'), '正在比較歷史與現代地名來源；地點較多時可能需要數分鐘。');
+  $('#step4').classList.add('hidden');
+  $('#confirmCoordinatesBtn').classList.add('hidden');
+  currentGeocodeResults = [];
+  selectedCoordinatePlaceIds.clear();
+  $('#geoTable tbody').innerHTML = '';
+  const progress = {placeName:'', currentPlace:0, totalPlaces:0, pendingDatabases:[]};
+  setStatus($('#geoStatus'), '正在準備歷史與現代地名資料庫…');
   try {
-    const r = await api(`/api/projects/${projectId}/geocode`, {method:'POST'});
-    renderGeocodes(r.results);
-    setStatus($('#geoStatus'), `✓ 經緯度配對完成：${r.count} 個地點。`);
-    $('#step4').classList.remove('hidden');
-    markStep(4);
-    $('#downloadMap').href = `/api/projects/${projectId}/map.geojson?download=true`;
-    $('#step4').scrollIntoView({behavior:'smooth'});
+    const r = await streamApi(`/api/projects/${projectId}/geocode/stream`, event => {
+      if (event.event === 'place_started') {
+        progress.placeName = event.place_name || '';
+        progress.currentPlace = Number(event.current_place || 0);
+        progress.totalPlaces = Number(event.total_places || 0);
+        setStatus(
+          $('#geoStatus'),
+          `正在配對 ${progress.currentPlace}/${progress.totalPlaces}：${progress.placeName}\n正在準備資料庫…`,
+        );
+      } else if (event.event === 'databases_started') {
+        progress.pendingDatabases = [...(event.databases || [])];
+        setStatus(
+          $('#geoStatus'),
+          `正在配對 ${progress.currentPlace}/${progress.totalPlaces}：${progress.placeName}\n目前配對資料庫：${progress.pendingDatabases.join('、')}`,
+        );
+      } else if (event.event === 'database_complete') {
+        progress.pendingDatabases = progress.pendingDatabases.filter(name => name !== event.database);
+        const remaining = progress.pendingDatabases.length
+          ? progress.pendingDatabases.join('、')
+          : '正在整理結果';
+        setStatus(
+          $('#geoStatus'),
+          `正在配對 ${progress.currentPlace}/${progress.totalPlaces}：${progress.placeName}\n剛完成：${event.database}（${Number(event.candidate_count || 0)} 個候選）\n目前配對資料庫：${remaining}`,
+        );
+      } else if (event.event === 'place_complete' && event.result) {
+        currentGeocodeResults.push(event.result);
+        renderGeocodes(currentGeocodeResults, {resetSelection:true});
+      }
+    });
+    renderGeocodes(r.results, {resetSelection:true});
+    setStatus($('#geoStatus'), `✓ 經緯度配對完成：已顯示全部 ${r.count} 個地點。請勾選並確認要加入地圖的座標。`);
+    $('#confirmCoordinatesBtn').classList.remove('hidden');
+    updateCoordinateConfirmButton();
+    markStep(3);
   } catch (err) {
     setStatus($('#geoStatus'), err.message, true);
   } finally { setBusy($('#geocodeBtn'), false, '正在配對…'); }
@@ -351,11 +391,40 @@ function classLabel(c) {
   return c === 'confirmed' ? '確認經緯度' : c === 'possible' ? '有可能' : '資料不足';
 }
 
-function renderGeocodes(results) {
+function updateCoordinateConfirmButton() {
+  const button = $('#confirmCoordinatesBtn');
+  button.disabled = selectedCoordinatePlaceIds.size === 0;
+  button.textContent = `確認座標（${selectedCoordinatePlaceIds.size}）`;
+}
+
+function invalidateCoordinateConfirmation() {
+  $('#step4').classList.add('hidden');
+  markStep(3);
+}
+
+function renderGeocodes(results, {resetSelection=false, preserveSelection=false, forceSelectedPlaceId=null}={}) {
+  currentGeocodeResults = [...results];
+  const liveIds = new Set(results.map(result => Number(result.place_id)));
+  if (resetSelection) {
+    selectedCoordinatePlaceIds = new Set(
+      results
+        .filter(result => result.coord_class === 'confirmed' && result.lon != null && result.lat != null)
+        .map(result => Number(result.place_id)),
+    );
+  } else if (preserveSelection) {
+    selectedCoordinatePlaceIds = new Set(
+      [...selectedCoordinatePlaceIds].filter(placeId => liveIds.has(placeId)),
+    );
+  }
+  if (forceSelectedPlaceId != null) selectedCoordinatePlaceIds.add(Number(forceSelectedPlaceId));
+
   const tbody = $('#geoTable tbody');
   tbody.innerHTML = results.map(r => {
     const opts = (r.candidates||[]).map(c => `<option value="${c.id}" ${c.source===r.source && Math.abs(c.lon-r.lon)<1e-8 && Math.abs(c.lat-r.lat)<1e-8?'selected':''}>${esc(c.source)}｜${esc(c.candidate_name)}｜${Number(c.score).toFixed(2)}</option>`).join('');
+    const hasCoordinates = r.lon != null && r.lat != null;
+    const isChecked = selectedCoordinatePlaceIds.has(Number(r.place_id));
     return `<tr data-place-id="${r.place_id}">
+      <td class="coordinate-check-cell"><input class="coordinate-row-check" type="checkbox" ${isChecked?'checked':''} ${hasCoordinates?'':'disabled'} aria-label="確認 ${esc(r.name)} 的座標"></td>
       <td>${r.route_order}</td><td>${esc(r.name)}</td>
       <td><span class="badge ${r.coord_class}">${classLabel(r.coord_class)}</span></td>
       <td>${Number(r.score||0).toFixed(2)}</td><td>${esc(r.source||'')}</td>
@@ -364,17 +433,53 @@ function renderGeocodes(results) {
     </tr>`;
   }).join('');
 
+  $$('.coordinate-row-check').forEach(check => check.addEventListener('change', event => {
+    const placeId = Number(event.target.closest('tr').dataset.placeId);
+    if (event.target.checked) selectedCoordinatePlaceIds.add(placeId);
+    else selectedCoordinatePlaceIds.delete(placeId);
+    invalidateCoordinateConfirmation();
+    updateCoordinateConfirmButton();
+  }));
+
   $$('.candidate-select').forEach(sel => sel.addEventListener('change', async e => {
     if (!e.target.value) return;
     const tr = e.target.closest('tr');
     try {
       await api(`/api/places/${tr.dataset.placeId}/select-candidate/${e.target.value}`, {method:'POST'});
       const places = await api(`/api/projects/${projectId}/places?candidates=true`);
-      const converted = places.map(p=>({place_id:p.id, route_order:p.route_order, name:p.normalized_name, coord_class:p.coord_class, score:p.coord_score, source:p.coord_source, lon:p.selected_lon, lat:p.selected_lat, candidates:p.candidates}));
-      renderGeocodes(converted);
+      const converted = places.filter(p=>p.user_selected).map(p=>({place_id:p.id, route_order:p.route_order, name:p.normalized_name, coord_class:p.coord_class, score:p.coord_score, source:p.coord_source, lon:p.selected_lon, lat:p.selected_lat, coordinate_selected:p.coordinate_selected, candidates:p.candidates}));
+      renderGeocodes(converted, {preserveSelection:true, forceSelectedPlaceId:Number(tr.dataset.placeId)});
+      invalidateCoordinateConfirmation();
+      updateCoordinateConfirmButton();
     } catch(err){ alert(err.message); }
   }));
+  updateCoordinateConfirmButton();
 }
+
+$('#confirmCoordinatesBtn').addEventListener('click', async () => {
+  if (!selectedCoordinatePlaceIds.size) {
+    setStatus($('#geoStatus'), '請至少勾選一個有經緯度的地名。', true);
+    return;
+  }
+  setBusy($('#confirmCoordinatesBtn'), true, '確認中…');
+  try {
+    const result = await api(`/api/projects/${projectId}/confirm-coordinates`, {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({place_ids:[...selectedCoordinatePlaceIds]}),
+    });
+    setStatus($('#geoStatus'), `✓ 已確認 ${result.selected_count} 個地點座標，第四部分只會使用呢啲地點。`);
+    $('#downloadMap').href = `/api/projects/${projectId}/map.geojson?download=true`;
+    $('#step4').classList.remove('hidden');
+    markStep(4);
+    $('#step4').scrollIntoView({behavior:'smooth'});
+  } catch (err) {
+    setStatus($('#geoStatus'), err.message, true);
+  } finally {
+    setBusy($('#confirmCoordinatesBtn'), false, '確認中…');
+    updateCoordinateConfirmButton();
+  }
+});
 
 async function waitForArcGIS() {
   for (let i=0;i<100;i++) {
@@ -507,7 +612,7 @@ async function loadMapData() {
   if (!mapState.view) await initMap();
   const places = await api(`/api/projects/${projectId}/places`);
   mapState.pointLayer.removeAll();
-  for (const p of places.filter(p=>p.user_selected && p.route_role !== 'mentioned_only' && p.selected_lon != null && p.selected_lat != null)) {
+  for (const p of places.filter(p=>p.coordinate_selected && p.selected_lon != null && p.selected_lat != null)) {
     const g = new mapState.Graphic({
       geometry:{type:'point', longitude:p.selected_lon, latitude:p.selected_lat, spatialReference:{wkid:4326}},
       attributes:{place_id:p.id, route_order:p.route_order, name:p.normalized_name, coord_class:p.coord_class, coord_source:p.coord_source},

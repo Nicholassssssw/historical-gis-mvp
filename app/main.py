@@ -1,3 +1,4 @@
+import asyncio
 import json
 import os
 import queue
@@ -16,6 +17,7 @@ load_dotenv()
 from .db import Base, SessionLocal, engine, ensure_compatibility_schema, get_db
 from .models import Candidate, Place, Project
 from .schemas import (
+    CoordinateSelectionConfirm,
     ExtractedPlace,
     PlaceExtraction,
     PlaceBulkRouteRoleUpdate,
@@ -90,6 +92,7 @@ def place_dict(p: Place, include_candidates: bool = False):
         "coord_source": p.coord_source,
         "manual_override": p.manual_override,
         "user_selected": p.user_selected,
+        "coordinate_selected": p.coordinate_selected,
         "active": p.active,
     }
     if include_candidates:
@@ -346,6 +349,7 @@ def _perform_project_extraction(
             adjacency_type=item.adjacency_type,
             confidence=item.confidence,
             user_selected=False,
+            coordinate_selected=False,
             active=True,
         ))
     project.stage = "review_places"
@@ -491,6 +495,7 @@ def create_place(project_id: int, payload: PlaceCreate, db: Session = Depends(ge
         adjacency_type=payload.adjacency_type,
         confidence=payload.confidence,
         user_selected=False,
+        coordinate_selected=False,
         active=True,
     )
     db.add(row)
@@ -514,6 +519,7 @@ def update_place(place_id: int, payload: PlaceUpdate, db: Session = Depends(get_
             p.coord_class = "confirmed"
             p.coord_source = "manual"
             p.coord_score = 1.0
+            p.coordinate_selected = True
     db.commit()
     db.refresh(p)
     return place_dict(p, include_candidates=True)
@@ -555,6 +561,7 @@ def confirm_places(
 
     for place in active_places:
         place.user_selected = place.id in requested_ids
+        place.coordinate_selected = False
     project.places_confirmed = True
     project.stage = "places_confirmed"
     db.commit()
@@ -574,19 +581,26 @@ def unconfirm_places(project_id: int, db: Session = Depends(get_db)):
     project = project_or_404(db, project_id)
     project.places_confirmed = False
     project.stage = "review_places"
+    db.query(Place).filter(Place.project_id == project_id).update(
+        {Place.coordinate_selected: False},
+        synchronize_session=False,
+    )
     db.commit()
     return {"ok": True}
 
 
-@app.post("/api/projects/{project_id}/geocode")
-async def run_geocoding(project_id: int, db: Session = Depends(get_db)):
+async def _perform_geocoding(project_id: int, db: Session, progress_callback=None):
     project = project_or_404(db, project_id)
     if not project.places_confirmed:
         raise HTTPException(409, "請先由用戶確認地名，再進行經緯度配對。")
     project.stage = "geocoding"
     db.commit()
     try:
-        result = await geocode_project(db, project)
+        result = await geocode_project(
+            db,
+            project,
+            progress_callback=progress_callback,
+        )
     except Exception as e:
         project.stage = "geocode_error"
         db.commit()
@@ -594,6 +608,94 @@ async def run_geocoding(project_id: int, db: Session = Depends(get_db)):
     project.stage = "geocoded"
     db.commit()
     return {"count": len(result), "results": result}
+
+
+@app.post("/api/projects/{project_id}/geocode")
+async def run_geocoding(project_id: int, db: Session = Depends(get_db)):
+    return await _perform_geocoding(project_id, db)
+
+
+@app.post("/api/projects/{project_id}/geocode/stream")
+async def run_geocoding_stream(project_id: int):
+    """Stream per-place and per-database geocoding progress to the browser."""
+    events = asyncio.Queue()
+    finished = object()
+
+    async def work():
+        db = SessionLocal()
+        try:
+            result = await _perform_geocoding(
+                project_id,
+                db,
+                progress_callback=events.put_nowait,
+            )
+            events.put_nowait({"event": "complete", "result": result})
+        except HTTPException as error:
+            events.put_nowait({"event": "error", "detail": str(error.detail)})
+        except Exception as error:
+            events.put_nowait({"event": "error", "detail": str(error)})
+        finally:
+            db.close()
+            events.put_nowait(finished)
+
+    async def response_events():
+        task = asyncio.create_task(work())
+        yield json.dumps({"event": "connected"}, ensure_ascii=False) + "\n"
+        while True:
+            try:
+                event = await asyncio.wait_for(events.get(), timeout=15)
+            except asyncio.TimeoutError:
+                yield json.dumps({"event": "heartbeat"}) + "\n"
+                continue
+            if event is finished:
+                break
+            yield json.dumps(event, ensure_ascii=False) + "\n"
+        await task
+
+    return StreamingResponse(
+        response_events(),
+        media_type="application/x-ndjson",
+        headers={
+            "Cache-Control": "no-cache, no-transform",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
+@app.post("/api/projects/{project_id}/confirm-coordinates")
+def confirm_coordinates(
+    project_id: int,
+    payload: CoordinateSelectionConfirm,
+    db: Session = Depends(get_db),
+):
+    project = project_or_404(db, project_id)
+    places = db.query(Place).filter(
+        Place.project_id == project_id,
+        Place.active == True,
+        Place.user_selected == True,
+    ).all()
+    requested_ids = set(payload.place_ids)
+    eligible_ids = {place.id for place in places}
+    if requested_ids - eligible_ids:
+        raise HTTPException(400, "座標選取資料已經改變，請重新配對後再試。")
+    selected_places = [place for place in places if place.id in requested_ids]
+    if not selected_places:
+        raise HTTPException(400, "請至少選擇一個有經緯度的地名。")
+    missing_coordinates = [
+        place.normalized_name
+        for place in selected_places
+        if place.selected_lon is None or place.selected_lat is None
+    ]
+    if missing_coordinates:
+        raise HTTPException(
+            400,
+            "以下地名沒有可確認座標：" + "、".join(missing_coordinates[:8]),
+        )
+    for place in places:
+        place.coordinate_selected = place.id in requested_ids
+    project.stage = "coordinates_confirmed"
+    db.commit()
+    return {"ok": True, "selected_count": len(selected_places)}
 
 
 @app.get("/api/places/{place_id}/candidates")
@@ -615,6 +717,7 @@ def select_candidate(place_id: int, candidate_id: int, db: Session = Depends(get
     p.coord_score = c.total_score
     p.coord_class = "confirmed"
     p.manual_override = True
+    p.coordinate_selected = True
     db.commit()
     return place_dict(p, include_candidates=True)
 
