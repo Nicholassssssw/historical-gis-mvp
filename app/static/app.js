@@ -3,7 +3,7 @@ let config = {};
 let currentPlaces = [];
 let selectedPlaceIds = new Set();
 let currentExtractionPlan = null;
-let mapState = { view:null, pointLayer:null, routeLayer:null, sketch:null, selectedGraphic:null };
+let mapState = { view:null, pointLayer:null, routeLayer:null, sketch:null, selectedGraphic:null, fullscreenCleanup:null };
 
 const $ = (s) => document.querySelector(s);
 const $$ = (s) => [...document.querySelectorAll(s)];
@@ -372,6 +372,51 @@ async function waitForArcGIS() {
   throw new Error('ArcGIS SDK未能載入。');
 }
 
+function addMapFullscreenControl(view) {
+  const mapElement = $('#mapView');
+  const requestFullscreen = mapElement.requestFullscreen || mapElement.webkitRequestFullscreen;
+  const exitFullscreen = document.exitFullscreen || document.webkitExitFullscreen;
+  if (!requestFullscreen || !exitFullscreen) return null;
+
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = 'esri-widget--button esri-widget esri-interactive map-fullscreen-button';
+  button.innerHTML = '<span aria-hidden="true">⛶</span>';
+
+  const currentFullscreenElement = () => document.fullscreenElement || document.webkitFullscreenElement;
+  const updateButton = () => {
+    const isFullscreen = currentFullscreenElement() === mapElement;
+    const label = isFullscreen ? '退出全螢幕地圖' : '全螢幕顯示地圖';
+    button.setAttribute('aria-label', label);
+    button.title = label;
+    button.setAttribute('aria-pressed', String(isFullscreen));
+  };
+
+  const toggleFullscreen = async () => {
+    try {
+      if (currentFullscreenElement() === mapElement) {
+        await exitFullscreen.call(document);
+      } else {
+        await requestFullscreen.call(mapElement);
+      }
+    } catch (error) {
+      setStatus($('#mapStatus'), `未能進入全螢幕：${error.message}`, true);
+    }
+  };
+
+  button.addEventListener('click', toggleFullscreen);
+  document.addEventListener('fullscreenchange', updateButton);
+  document.addEventListener('webkitfullscreenchange', updateButton);
+  updateButton();
+  view.ui.add(button, 'top-right');
+
+  return () => {
+    button.removeEventListener('click', toggleFullscreen);
+    document.removeEventListener('fullscreenchange', updateButton);
+    document.removeEventListener('webkitfullscreenchange', updateButton);
+  };
+}
+
 async function initMap() {
   await waitForArcGIS();
   const [esriConfig, Map, MapView, GraphicsLayer, Graphic, Sketch] = await Promise.all([
@@ -384,7 +429,11 @@ async function initMap() {
   ]);
   if (config.arcgis_api_key) esriConfig.apiKey = config.arcgis_api_key;
 
-  if (mapState.view) { mapState.view.destroy(); mapState = {view:null,pointLayer:null,routeLayer:null,sketch:null,selectedGraphic:null}; }
+  if (mapState.view) {
+    mapState.fullscreenCleanup?.();
+    mapState.view.destroy();
+    mapState = {view:null,pointLayer:null,routeLayer:null,sketch:null,selectedGraphic:null,fullscreenCleanup:null};
+  }
   const routeLayer = new GraphicsLayer({title:'文本次序路線'});
   const pointLayer = new GraphicsLayer({title:'行程地點'});
   const map = new Map({basemap: config.arcgis_api_key ? 'arcgis/topographic' : 'osm', layers:[routeLayer, pointLayer]});
@@ -392,7 +441,8 @@ async function initMap() {
   await view.when();
   const sketch = new Sketch({view, layer:pointLayer, creationMode:'single', availableCreateTools:[], visibleElements:{settingsMenu:false}});
   view.ui.add(sketch, 'top-right');
-  mapState = {view, pointLayer, routeLayer, sketch, Graphic, selectedGraphic:null};
+  const fullscreenCleanup = addMapFullscreenControl(view);
+  mapState = {view, pointLayer, routeLayer, sketch, Graphic, selectedGraphic:null, fullscreenCleanup};
 
   sketch.on('update', async (event) => {
     if (event.state !== 'complete') return;

@@ -141,6 +141,8 @@ td input, td select, td textarea { padding: 8px; }
 
 .map-shell { overflow: hidden; border: 1px solid #dfe2dc; border-radius: 14px; background: #f9faf7; }
 .map { height: 620px; width: 100%; }
+.map:fullscreen, .map:-webkit-full-screen { width: 100vw; height: 100vh; background: #f9faf7; }
+.map-fullscreen-button > span { display: inline-block; font-size: 20px; line-height: 1; transform: translateY(-1px); }
 .map-meta { min-height: 52px; padding: 10px 14px; display: flex; align-items: center; justify-content: space-between; gap: 16px; border-top: 1px solid #e0e3dc; }
 .map-meta .status { margin: 0; padding: 0; background: transparent; text-align: right; }
 .legend { display: flex; gap: 16px; flex-wrap: wrap; color: #52605c; font-size: 11px; }
