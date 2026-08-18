@@ -47,6 +47,7 @@
         <p>支援 TXT、Markdown、Word 及文字型 PDF。</p>
       </div>
       <form id="uploadForm" class="upload-grid">
+        <label>文本名稱（待核）<input id="title" name="title" placeholder="例如：徐霞客浙遊日記" autocomplete="off" /><span>DeepSeek 會以文本紀錄核對</span></label>
         <label class="period-field">朝代<input id="dynasty" name="historical_dynasty" type="text" placeholder="例如：明朝" autocomplete="off" /></label>
         <label class="period-field">年份<input id="historicalYear" name="historical_year_text" type="text" placeholder="例如：1636 或崇禎九年" autocomplete="off" /></label>
         <label class="file-field">文本檔案<input id="file" name="file" type="file" accept=".txt,.md,.docx,.pdf" required /><span id="fileName">選擇檔案</span><small>掃描式 PDF 請先完成 OCR</small></label>

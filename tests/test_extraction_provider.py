@@ -544,7 +544,7 @@ def test_vertex_429_pins_direct_deepseek_when_key_exists(monkeypatch):
         primary_calls += 1
         raise extraction.VertexThrottleError("DeepSeek shared capacity exhausted")
 
-    def working_direct_deepseek(text, historical_period):
+    def working_direct_deepseek(text, historical_period, document_title_hint=None):
         nonlocal direct_calls
         direct_calls += 1
         return extraction.PlaceExtraction.model_validate({
@@ -596,7 +596,7 @@ def test_direct_deepseek_fallback_uses_provider_specific_model(monkeypatch):
 
 
 def test_extraction_prompt_keeps_places_from_research_documents():
-    prompt = extraction._extraction_prompt("明朝")
+    prompt = extraction._extraction_prompt("明朝", "待核書名")
 
     assert "研究論文、學位論文、目錄、註釋" in prompt
     assert "places 不得回傳空陣列" in prompt
@@ -608,7 +608,10 @@ def test_extraction_prompt_keeps_places_from_research_documents():
     assert "在文本內搜尋歷史區域" in prompt
     assert "同一日期段" in prompt
     assert "搜尋只限本次提供的來源文本" in prompt
-    assert "使用者提供的文獻時期資料：明朝" in prompt
+    assert "文本名稱候選：待核書名" in prompt
+    assert "時期候選：明朝" in prompt
+    assert "必須在 SOURCE TEXT 內搜尋紀錄並核對" in prompt
+    assert "不得因使用者填寫便直接複製到輸出" in prompt
     assert "不可單獨作為任何地名之 historical_region 證據" in prompt
     assert "document_title" in prompt
     assert "historical_dynasty" in prompt

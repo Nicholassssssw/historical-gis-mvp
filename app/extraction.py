@@ -113,18 +113,33 @@ def extraction_provider_config() -> dict:
     raise RuntimeError("系統已鎖定為 DeepSeek-only。")
 
 
-def _extraction_prompt(historical_period: str | None = None) -> str:
+def _extraction_prompt(
+    historical_period: str | None = None,
+    document_title_hint: str | None = None,
+) -> str:
     prompt = PROMPT_PATH.read_text(encoding="utf-8")
+    supplied_context = []
+    if document_title_hint:
+        supplied_context.append(f"文本名稱候選：{document_title_hint}")
     if historical_period:
+        supplied_context.append(f"時期候選：{historical_period}")
+    if supplied_context:
         prompt += (
-            "\n\n使用者提供的文獻時期資料："
-            f"{historical_period}。只可用作判斷時期的線索，"
-            "不可單獨作為任何地名之 historical_region 證據。"
+            "\n\n使用者提供的待核資料："
+            + "；".join(supplied_context)
+            + "。必須在 SOURCE TEXT 內搜尋紀錄並核對；"
+            "不得因使用者填寫便直接複製到輸出。若文本無證據或互相矛盾，"
+            "以文本證據為準，無法確認則輸出 null。這些待核資料亦不可單獨"
+            "作為任何地名之 historical_region 證據。"
         )
     return prompt
 
 
-def extract_places_with_deepseek(text: str, historical_period: str | None = None) -> PlaceExtraction:
+def extract_places_with_deepseek(
+    text: str,
+    historical_period: str | None = None,
+    document_title_hint: str | None = None,
+) -> PlaceExtraction:
     api_key = os.getenv("DEEPSEEK_API_KEY")
     if not api_key:
         raise RuntimeError("DEEPSEEK_API_KEY 未設定。")
@@ -134,7 +149,10 @@ def extract_places_with_deepseek(text: str, historical_period: str | None = None
     payload = {
         "model": model,
         "messages": [
-            {"role": "system", "content": _extraction_prompt(historical_period)},
+            {
+                "role": "system",
+                "content": _extraction_prompt(historical_period, document_title_hint),
+            },
             {"role": "user", "content": text},
         ],
         "response_format": {"type": "json_object"},
@@ -511,6 +529,7 @@ def _post_vertex_json(endpoint: str, payload: dict, progress_callback=None) -> d
 def extract_places_with_vertex_deepseek(
     text: str,
     historical_period: str | None = None,
+    document_title_hint: str | None = None,
     *,
     start_read: int = 0,
     existing_places: list | None = None,
@@ -544,7 +563,7 @@ def extract_places_with_vertex_deepseek(
         chunk_index = zero_based_index + 1
         chunk = chunks[zero_based_index]
         user_content = (
-            f"{_extraction_prompt(historical_period)}\n\n"
+            f"{_extraction_prompt(historical_period, document_title_hint)}\n\n"
             f"SOURCE TEXT TO EXTRACT (chunk {chunk_index} of {len(chunks)}):\n"
             f"{chunk}"
         )
@@ -560,6 +579,7 @@ def extract_places_with_vertex_deepseek(
             chunk_result = extract_places_with_deepseek(
                 chunk,
                 historical_period,
+                document_title_hint,
             )
         else:
             try:
@@ -586,6 +606,7 @@ def extract_places_with_vertex_deepseek(
                         chunk_result = extract_places_with_deepseek(
                             chunk,
                             historical_period,
+                            document_title_hint,
                         )
                         use_direct_deepseek = True
                     except Exception as error:
@@ -633,10 +654,22 @@ def extract_places_with_vertex_deepseek(
     )
 
 
-def extract_places(text: str, historical_period: str | None = None) -> PlaceExtraction:
+def extract_places(
+    text: str,
+    historical_period: str | None = None,
+    document_title_hint: str | None = None,
+) -> PlaceExtraction:
     provider = configured_extraction_provider()
     if provider == "google_vertex":
-        return extract_places_with_vertex_deepseek(text, historical_period)
+        return extract_places_with_vertex_deepseek(
+            text,
+            historical_period,
+            document_title_hint,
+        )
     if provider == "deepseek":
-        return extract_places_with_deepseek(text, historical_period)
+        return extract_places_with_deepseek(
+            text,
+            historical_period,
+            document_title_hint,
+        )
     raise RuntimeError("系統已鎖定為 DeepSeek-only。")

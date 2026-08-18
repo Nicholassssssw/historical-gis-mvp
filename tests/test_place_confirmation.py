@@ -132,7 +132,7 @@ def test_detected_single_character_dynasty_is_normalized():
     assert project.historical_period == "朝代：明朝；年份：崇禎九年"
 
 
-def test_detected_title_replaces_old_title_but_period_fields_keep_user_values():
+def test_source_search_replaces_all_upload_hints():
     project = Project(
         title="使用者名稱",
         title_user_provided=True,
@@ -153,7 +153,35 @@ def test_detected_title_replaces_old_title_but_period_fields_keep_user_values():
     _apply_detected_document_context(project, result)
 
     assert project.title == "《另一作品》"
-    assert project.historical_dynasty == "明朝"
-    assert project.historical_year_text == "1637"
-    assert project.historical_year == 1637
-    assert project.historical_period == "朝代：明朝；年份：1637"
+    assert project.historical_dynasty == "清朝"
+    assert project.historical_year_text == "順治元年"
+    assert project.historical_year is None
+    assert project.historical_period == "朝代：清朝；年份：順治元年"
+
+
+def test_unverified_upload_hints_are_not_used_as_final_metadata():
+    project = Project(
+        title="錯誤手填名稱",
+        title_user_provided=True,
+        filename="real-file-name.txt",
+        historical_year=1637,
+        historical_period="朝代：明朝；年份：1637",
+        historical_dynasty="明朝",
+        historical_year_text="1637",
+        raw_text="初一，至杭州。",
+    )
+    result = PlaceExtraction.model_validate({
+        "document_title": None,
+        "historical_dynasty": None,
+        "historical_year_text": None,
+        "places": [],
+    })
+
+    _apply_detected_document_context(project, result)
+
+    assert project.title == "未能從文本確認名稱"
+    assert project.title != "real-file-name"
+    assert project.historical_dynasty is None
+    assert project.historical_year_text is None
+    assert project.historical_year is None
+    assert project.historical_period is None

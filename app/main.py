@@ -131,6 +131,7 @@ def config():
 @app.post("/api/projects")
 async def upload_project(
     file: Annotated[UploadFile, File(...)],
+    title: Annotated[str | None, Form()] = None,
     historical_period: Annotated[str | None, Form()] = None,
     historical_dynasty: Annotated[str | None, Form()] = None,
     historical_year_text: Annotated[str | None, Form()] = None,
@@ -144,6 +145,7 @@ async def upload_project(
     if not text.strip():
         raise HTTPException(400, "檔案未能抽取到文字。掃描PDF需要先做OCR。")
 
+    provided_title = (title or "").strip()[:255] or None
     legacy_period = (historical_period or "").strip()[:120] or None
     dynasty = (historical_dynasty or "").strip()[:50] or None
     year_text = (historical_year_text or "").strip()[:50] or None
@@ -159,8 +161,8 @@ async def upload_project(
     )
     extraction_plan = vertex_extraction_plan(text, metrics["word_count"])
     project = Project(
-        title=Path(file.filename or "Untitled").stem,
-        title_user_provided=False,
+        title=provided_title or "未命名文本",
+        title_user_provided=provided_title is not None,
         filename=file.filename or "upload",
         historical_year=numeric_year_from_period(year_text or legacy_period),
         historical_period=period,
@@ -202,27 +204,22 @@ def _apply_detected_document_context(
     project: Project,
     result: PlaceExtraction,
 ) -> None:
-    """Apply searched title and fill only omitted dynasty/year upload fields."""
+    """Replace upload hints with metadata verified from the source text."""
     detected_title = _clean_detected_metadata(result.document_title, 255)
     detected_dynasty = _clean_detected_dynasty(result.historical_dynasty)
     detected_year_text = _clean_detected_metadata(result.historical_year_text, 120)
 
-    if detected_title:
-        project.title = detected_title
-    if not project.historical_dynasty and detected_dynasty:
-        project.historical_dynasty = detected_dynasty
-    if not project.historical_year_text and detected_year_text:
-        project.historical_year_text = detected_year_text
-    if project.historical_year is None and project.historical_year_text:
-        project.historical_year = numeric_year_from_period(project.historical_year_text)
+    project.title = detected_title or "未能從文本確認名稱"
+    project.historical_dynasty = detected_dynasty
+    project.historical_year_text = detected_year_text
+    project.historical_year = numeric_year_from_period(detected_year_text)
 
     period_parts = []
     if project.historical_dynasty:
         period_parts.append(f"朝代：{project.historical_dynasty}")
     if project.historical_year_text:
         period_parts.append(f"年份：{project.historical_year_text}")
-    if period_parts:
-        project.historical_period = "；".join(period_parts)
+    project.historical_period = "；".join(period_parts) or None
 
 
 def _perform_project_extraction(
@@ -276,10 +273,12 @@ def _perform_project_extraction(
                 })
 
     try:
+        document_title_hint = project.title if project.title_user_provided else None
         if provider == "google_vertex":
             result = extract_places_with_vertex_deepseek(
                 project.raw_text,
                 project.historical_period,
+                document_title_hint,
                 start_read=start_read,
                 existing_places=existing_places,
                 chunk_chars=project.extraction_chunk_chars,
@@ -287,7 +286,11 @@ def _perform_project_extraction(
                 stream_callback=stream_callback,
             )
         else:
-            result = extract_places(project.raw_text, project.historical_period)
+            result = extract_places(
+                project.raw_text,
+                project.historical_period,
+                document_title_hint,
+            )
     except Exception as e:
         project.stage = "extraction_error"
         db.commit()
