@@ -510,4 +510,9 @@ def test_extraction_prompt_keeps_places_from_research_documents():
 
     assert "研究論文、學位論文、目錄、註釋" in prompt
     assert "places 不得回傳空陣列" in prompt
+    assert "先判斷文本來源時期" in prompt
+    assert "前 3 句及後 3 句" in prompt
+    assert 'route_role 必須是 "passed" 或 "mentioned_only"' in prompt
+    assert "normalized_name 必須與 original_name 完全相同" in prompt
+    assert "不得使用模型記憶" in prompt
     assert "年份／朝代 = 明朝" in prompt
