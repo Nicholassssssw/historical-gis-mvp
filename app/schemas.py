@@ -37,6 +37,9 @@ class ExtractedPlace(BaseModel):
 
 
 class PlaceExtraction(BaseModel):
+    document_title: str | None = None
+    historical_dynasty: str | None = None
+    historical_year_text: str | None = None
     places: list[ExtractedPlace]
 
 

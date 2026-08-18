@@ -535,6 +535,9 @@ def extract_places_with_vertex_deepseek(
     if not 0 <= start_read <= len(chunks):
         raise RuntimeError("已儲存的閱讀進度與目前文件不一致，請重新上載文件。")
     merged_places = list(existing_places or [])
+    detected_document_title = None
+    detected_historical_dynasty = None
+    detected_historical_year_text = None
     use_direct_deepseek = False
 
     for zero_based_index in range(start_read, len(chunks)):
@@ -604,13 +607,30 @@ def extract_places_with_vertex_deepseek(
                     "沒有返回可解析的地名 JSON。"
                 ) from error
 
+        # Keep the first explicit source-text finding across chunks. Later
+        # chunks may contain cited works or different quoted periods and must
+        # not silently replace an earlier document-level identification.
+        detected_document_title = (
+            detected_document_title or chunk_result.document_title
+        )
+        detected_historical_dynasty = (
+            detected_historical_dynasty or chunk_result.historical_dynasty
+        )
+        detected_historical_year_text = (
+            detected_historical_year_text or chunk_result.historical_year_text
+        )
         for item in sorted(chunk_result.places, key=lambda place: place.route_order):
             item.route_order = len(merged_places) + 1
             merged_places.append(item)
         if progress_callback:
             progress_callback(chunk_index, len(chunks), merged_places)
 
-    return PlaceExtraction(places=merged_places)
+    return PlaceExtraction(
+        document_title=detected_document_title,
+        historical_dynasty=detected_historical_dynasty,
+        historical_year_text=detected_historical_year_text,
+        places=merged_places,
+    )
 
 
 def extract_places(text: str, historical_period: str | None = None) -> PlaceExtraction:

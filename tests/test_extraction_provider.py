@@ -36,6 +36,9 @@ class FakeDeepSeekResponse:
             "choices": [{
                 "message": {
                     "content": json.dumps({
+                        "document_title": "《徐霞客遊記》",
+                        "historical_dynasty": "明朝",
+                        "historical_year_text": "崇禎九年",
                         "places": [{
                             "route_order": 1,
                             "original_name": "臨安",
@@ -76,6 +79,9 @@ def test_deepseek_json_output_is_validated(monkeypatch):
 
     assert result.places[0].original_name == "臨安"
     assert result.places[0].route_role == "passed"
+    assert result.document_title == "《徐霞客遊記》"
+    assert result.historical_dynasty == "明朝"
+    assert result.historical_year_text == "崇禎九年"
     assert captured["url"] == "https://api.deepseek.com/chat/completions"
     assert captured["payload"]["response_format"] == {"type": "json_object"}
     assert "JSON" in captured["payload"]["messages"][0]["content"]
@@ -300,6 +306,9 @@ def test_long_vertex_source_is_chunked_and_route_order_is_merged(monkeypatch):
         response.json = lambda: {
             **original_json(),
             "choices": [{"message": {"content": json.dumps({
+                "document_title": "《徐霞客遊記》",
+                "historical_dynasty": "明朝",
+                "historical_year_text": "崇禎九年",
                 "places": [{
                     "route_order": 1,
                     "original_name": f"地名{place_number}",
@@ -329,6 +338,9 @@ def test_long_vertex_source_is_chunked_and_route_order_is_merged(monkeypatch):
     assert len(calls) == 3
     assert [place.route_order for place in result.places] == [1, 2, 3]
     assert [place.original_name for place in result.places] == ["地名1", "地名2", "地名3"]
+    assert result.document_title == "《徐霞客遊記》"
+    assert result.historical_dynasty == "明朝"
+    assert result.historical_year_text == "崇禎九年"
     assert "chunk 1 of 3" in calls[0]["messages"][0]["content"]
 
 
@@ -598,3 +610,8 @@ def test_extraction_prompt_keeps_places_from_research_documents():
     assert "搜尋只限本次提供的來源文本" in prompt
     assert "使用者提供的文獻時期資料：明朝" in prompt
     assert "不可單獨作為任何地名之 historical_region 證據" in prompt
+    assert "document_title" in prompt
+    assert "historical_dynasty" in prompt
+    assert "historical_year_text" in prompt
+    assert "目前來源文本本身，而不是正文引用的另一部書" in prompt
+    assert "對應欄位必須輸出 null" in prompt

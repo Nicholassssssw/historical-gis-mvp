@@ -4,9 +4,9 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from app.db import Base
-from app.main import confirm_places
+from app.main import _apply_detected_document_context, confirm_places
 from app.models import Place, Project
-from app.schemas import PlaceSelectionConfirm
+from app.schemas import PlaceExtraction, PlaceSelectionConfirm
 
 
 @pytest.fixture
@@ -83,3 +83,57 @@ def test_mentioned_only_selection_does_not_confirm_a_route(db):
     db.refresh(mentioned)
     assert passed.user_selected is False
     assert mentioned.user_selected is False
+
+
+def test_detected_document_context_fills_only_omitted_upload_fields():
+    project = Project(
+        title="upload-file",
+        title_user_provided=False,
+        filename="upload-file.txt",
+        historical_year=None,
+        historical_period=None,
+        historical_dynasty=None,
+        historical_year_text=None,
+        raw_text="《徐霞客遊記》。崇禎九年，至杭州。",
+    )
+    result = PlaceExtraction.model_validate({
+        "document_title": "《徐霞客遊記》",
+        "historical_dynasty": "明朝",
+        "historical_year_text": "崇禎九年（1636）",
+        "places": [],
+    })
+
+    _apply_detected_document_context(project, result)
+
+    assert project.title == "《徐霞客遊記》"
+    assert project.historical_dynasty == "明朝"
+    assert project.historical_year_text == "崇禎九年（1636）"
+    assert project.historical_year == 1636
+    assert project.historical_period == "朝代：明朝；年份：崇禎九年（1636）"
+
+
+def test_detected_document_context_never_overwrites_user_values():
+    project = Project(
+        title="使用者名稱",
+        title_user_provided=True,
+        filename="upload-file.txt",
+        historical_year=1637,
+        historical_period="朝代：明朝；年份：1637",
+        historical_dynasty="明朝",
+        historical_year_text="1637",
+        raw_text="《另一作品》。清朝順治年間，至杭州。",
+    )
+    result = PlaceExtraction.model_validate({
+        "document_title": "《另一作品》",
+        "historical_dynasty": "清朝",
+        "historical_year_text": "順治元年",
+        "places": [],
+    })
+
+    _apply_detected_document_context(project, result)
+
+    assert project.title == "使用者名稱"
+    assert project.historical_dynasty == "明朝"
+    assert project.historical_year_text == "1637"
+    assert project.historical_year == 1637
+    assert project.historical_period == "朝代：明朝；年份：1637"

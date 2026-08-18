@@ -172,6 +172,12 @@ $('#extractBtn').addEventListener('click', async () => {
         );
       }
     });
+    if (result.document_context) {
+      const context = result.document_context;
+      $('#reviewTextTitle').textContent = context.title || '—';
+      $('#reviewDynasty').textContent = context.historical_dynasty || '—';
+      $('#reviewYear').textContent = context.historical_year_text || (context.historical_year ?? '—');
+    }
     currentPlaces = result.places;
     selectedPlaceIds.clear();
     renderPlaces(currentPlaces);

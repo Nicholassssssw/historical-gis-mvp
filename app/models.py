@@ -9,6 +9,7 @@ class Project(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     title: Mapped[str] = mapped_column(String(255), default="Untitled")
+    title_user_provided: Mapped[bool] = mapped_column(Boolean, default=False)
     filename: Mapped[str] = mapped_column(String(255), default="")
     historical_year: Mapped[int | None] = mapped_column(Integer, nullable=True)
     historical_period: Mapped[str | None] = mapped_column(String(120), nullable=True)

@@ -17,6 +17,9 @@ def ensure_compatibility_schema():
         return
     columns = {column["name"] for column in inspector.get_columns("projects")}
     project_additions = {
+        # Existing records predate automatic title detection, so their current
+        # titles are treated as intentional and must never be replaced.
+        "title_user_provided": "BOOLEAN DEFAULT 1",
         "historical_period": "VARCHAR(120)",
         "historical_dynasty": "VARCHAR(120)",
         "historical_year_text": "VARCHAR(120)",

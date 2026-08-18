@@ -17,6 +17,7 @@ from .db import Base, SessionLocal, engine, ensure_compatibility_schema, get_db
 from .models import Candidate, Place, Project
 from .schemas import (
     ExtractedPlace,
+    PlaceExtraction,
     PlaceBulkRouteRoleUpdate,
     PlaceCreate,
     PlaceSelectionConfirm,
@@ -144,6 +145,7 @@ async def upload_project(
     if not text.strip():
         raise HTTPException(400, "檔案未能抽取到文字。掃描PDF需要先做OCR。")
 
+    provided_title = (title or "").strip()[:255] or None
     legacy_period = (historical_period or "").strip()[:120] or None
     dynasty = (historical_dynasty or "").strip()[:50] or None
     year_text = (historical_year_text or "").strip()[:50] or None
@@ -159,7 +161,8 @@ async def upload_project(
     )
     extraction_plan = vertex_extraction_plan(text, metrics["word_count"])
     project = Project(
-        title=title or Path(file.filename or "Untitled").stem,
+        title=provided_title or Path(file.filename or "Untitled").stem,
+        title_user_provided=provided_title is not None,
         filename=file.filename or "upload",
         historical_year=numeric_year_from_period(year_text or legacy_period),
         historical_period=period,
@@ -181,6 +184,40 @@ async def upload_project(
             "historical_year_text": project.historical_year_text,
             "stage": project.stage, "text_chars": len(project.raw_text),
             "extraction_plan": extraction_plan, **metrics}
+
+
+def _clean_detected_metadata(value: str | None, max_length: int) -> str | None:
+    if not value:
+        return None
+    cleaned = " ".join(value.split()).strip()
+    return cleaned[:max_length] or None
+
+
+def _apply_detected_document_context(
+    project: Project,
+    result: PlaceExtraction,
+) -> None:
+    """Fill omitted upload metadata without replacing anything entered by a user."""
+    detected_title = _clean_detected_metadata(result.document_title, 255)
+    detected_dynasty = _clean_detected_metadata(result.historical_dynasty, 120)
+    detected_year_text = _clean_detected_metadata(result.historical_year_text, 120)
+
+    if not project.title_user_provided and detected_title:
+        project.title = detected_title
+    if not project.historical_dynasty and detected_dynasty:
+        project.historical_dynasty = detected_dynasty
+    if not project.historical_year_text and detected_year_text:
+        project.historical_year_text = detected_year_text
+    if project.historical_year is None and project.historical_year_text:
+        project.historical_year = numeric_year_from_period(project.historical_year_text)
+
+    period_parts = []
+    if project.historical_dynasty:
+        period_parts.append(f"朝代：{project.historical_dynasty}")
+    if project.historical_year_text:
+        period_parts.append(f"年份：{project.historical_year_text}")
+    if period_parts:
+        project.historical_period = "；".join(period_parts)
 
 
 def _perform_project_extraction(
@@ -272,6 +309,8 @@ def _perform_project_extraction(
             "AI 沒有抽取到任何地名，系統未將空白結果當作完成。請再次按抽取重試。",
         )
 
+    _apply_detected_document_context(project, result)
+
     db.query(Candidate).filter(Candidate.place_id.in_(
         db.query(Place.id).filter(Place.project_id == project.id)
     )).delete(synchronize_session=False)
@@ -306,7 +345,22 @@ def _perform_project_extraction(
     project.extraction_completed_reads = 0
     project.extraction_partial_json = None
     db.commit()
-    return {"count": len(extracted), "places": [place_dict(p) for p in db.query(Place).filter(Place.project_id == project.id).order_by(Place.route_order).all()]}
+    return {
+        "count": len(extracted),
+        "document_context": {
+            "title": project.title,
+            "historical_dynasty": project.historical_dynasty,
+            "historical_year_text": project.historical_year_text,
+            "historical_year": project.historical_year,
+        },
+        "places": [
+            place_dict(p)
+            for p in db.query(Place)
+            .filter(Place.project_id == project.id)
+            .order_by(Place.route_order)
+            .all()
+        ],
+    }
 
 
 @app.post("/api/projects/{project_id}/extract")
