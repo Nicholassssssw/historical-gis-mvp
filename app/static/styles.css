@@ -84,9 +84,10 @@ button:disabled { opacity: .42; cursor: not-allowed; }
 .button-danger { color: var(--danger); border-color: #edd1cc; background: #fff8f6; }
 .toolbar { display: flex; gap: 10px; flex-wrap: wrap; margin: 0 0 18px; }
 .document-context { margin: -4px 0 18px; padding: 13px 15px; display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(0, .7fr) minmax(0, .8fr); gap: 12px; border: 1px solid #dfe5df; border-radius: 12px; background: #f6faf8; }
-.document-context div { min-width: 0; }
-.document-context dt { margin: 0 0 4px; color: #354540; font-size: 11px; font-weight: 900; letter-spacing: .04em; }
-.document-context dd { margin: 0; overflow-wrap: anywhere; color: var(--ink); font-size: 13px; font-weight: 750; }
+.document-context div { min-width: 0; display: flex; align-items: baseline; gap: 8px; }
+.document-context dt { flex: 0 0 auto; margin: 0; color: #263a34; font-size: 12px; font-weight: 900; letter-spacing: .02em; white-space: nowrap; }
+.document-context dt strong { font-weight: 900; }
+.document-context dd { min-width: 0; margin: 0; overflow-wrap: anywhere; color: var(--ink); font-size: 13px; font-weight: 650; }
 
 .status { min-height: 0; margin-top: 14px; color: #405450; white-space: pre-wrap; font-size: 13px; line-height: 1.55; }
 .status:not(:empty) { padding: 11px 13px; border-radius: 10px; background: #eef6f3; }
