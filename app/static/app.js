@@ -5,7 +5,7 @@ let selectedPlaceIds = new Set();
 let currentGeocodeResults = [];
 let selectedCoordinatePlaceIds = new Set();
 let currentExtractionPlan = null;
-let mapState = { view:null, pointLayer:null, routeLayer:null, sketch:null, selectedGraphic:null, fullscreenCleanup:null };
+let mapState = { view:null, pointLayer:null, routeLayer:null, sketch:null, selectedGraphic:null, fullscreenCleanup:null, usingFallbackBasemap:false };
 
 const $ = (s) => document.querySelector(s);
 const $$ = (s) => [...document.querySelectorAll(s)];
@@ -544,22 +544,32 @@ async function initMap() {
     $arcgis.import('@arcgis/core/Graphic.js'),
     $arcgis.import('@arcgis/core/widgets/Sketch.js')
   ]);
-  if (config.arcgis_api_key) esriConfig.apiKey = config.arcgis_api_key;
+  const arcgisApiKey = String(config.arcgis_api_key || '').trim();
+  esriConfig.apiKey = arcgisApiKey || null;
 
   if (mapState.view) {
     mapState.fullscreenCleanup?.();
     mapState.view.destroy();
-    mapState = {view:null,pointLayer:null,routeLayer:null,sketch:null,selectedGraphic:null,fullscreenCleanup:null};
+    mapState = {view:null,pointLayer:null,routeLayer:null,sketch:null,selectedGraphic:null,fullscreenCleanup:null,usingFallbackBasemap:false};
   }
   const routeLayer = new GraphicsLayer({title:'文本次序路線'});
   const pointLayer = new GraphicsLayer({title:'行程地點'});
-  const map = new Map({basemap: config.arcgis_api_key ? 'arcgis/topographic' : 'osm', layers:[routeLayer, pointLayer]});
+  const map = new Map({basemap: arcgisApiKey ? 'arcgis/topographic' : 'osm', layers:[routeLayer, pointLayer]});
+  let usingFallbackBasemap = false;
+  try {
+    await map.basemap.load();
+  } catch (error) {
+    console.warn('ArcGIS basemap failed; switching to OpenStreetMap.', error);
+    map.basemap = 'osm';
+    await map.basemap.load();
+    usingFallbackBasemap = true;
+  }
   const view = new MapView({container:'mapView', map, center:[120.2,30.3], zoom:7});
   await view.when();
   const sketch = new Sketch({view, layer:pointLayer, creationMode:'single', availableCreateTools:[], visibleElements:{settingsMenu:false}});
   view.ui.add(sketch, 'top-right');
   const fullscreenCleanup = addMapFullscreenControl(view);
-  mapState = {view, pointLayer, routeLayer, sketch, Graphic, selectedGraphic:null, fullscreenCleanup};
+  mapState = {view, pointLayer, routeLayer, sketch, Graphic, selectedGraphic:null, fullscreenCleanup, usingFallbackBasemap};
 
   sketch.on('update', async (event) => {
     if (event.state !== 'complete') return;
@@ -627,7 +637,8 @@ async function loadMapData() {
   if (mapState.pointLayer.graphics.length) {
     await mapState.view.goTo(mapState.pointLayer.graphics.toArray(), {padding:50}).catch(()=>{});
   }
-  setStatus($('#mapStatus'), `已顯示 ${mapState.pointLayer.graphics.length} 個有坐標地點；路線按文本次序生成。`);
+  const basemapNote = mapState.usingFallbackBasemap ? '；ArcGIS 底圖暫時不可用，已自動改用 OpenStreetMap' : '';
+  setStatus($('#mapStatus'), `已顯示 ${mapState.pointLayer.graphics.length} 個有坐標地點；路線按文本次序生成${basemapNote}。`);
 }
 
 $('#showMapBtn').addEventListener('click', async () => {

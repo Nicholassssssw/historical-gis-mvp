@@ -4,7 +4,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from app.db import Base
-from app.main import _apply_detected_document_context, confirm_coordinates, confirm_places
+from app.main import _apply_detected_document_context, config as app_config, confirm_coordinates, confirm_places
 from app.models import Place, Project
 from app.schemas import CoordinateSelectionConfirm, PlaceExtraction, PlaceSelectionConfirm
 
@@ -18,6 +18,12 @@ def db():
         yield session
     finally:
         session.close()
+
+
+def test_public_config_trims_arcgis_api_key(monkeypatch):
+    monkeypatch.setenv("ARCGIS_API_KEY", "  arcgis-test-key\n")
+
+    assert app_config()["arcgis_api_key"] == "arcgis-test-key"
 
 
 def make_project_with_places(db):

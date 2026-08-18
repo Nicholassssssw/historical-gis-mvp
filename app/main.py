@@ -116,7 +116,7 @@ def health():
 def config():
     extraction = extraction_provider_config()
     return {
-        "arcgis_api_key": os.getenv("ARCGIS_API_KEY", ""),
+        "arcgis_api_key": os.getenv("ARCGIS_API_KEY", "").strip(),
         "google_enabled": bool(os.getenv("GOOGLE_MAPS_API_KEY")),
         "deepseek_enabled": bool(os.getenv("DEEPSEEK_API_KEY")),
         "deepseek_model": os.getenv("DEEPSEEK_MODEL", "deepseek-v4-flash"),
