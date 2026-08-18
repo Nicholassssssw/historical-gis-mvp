@@ -204,7 +204,6 @@ function renderPlaces(places) {
       <td><span class="readonly-value">${esc(p.date_text || '—')}</span></td>
       <td><span class="readonly-value place-value">${esc(p.original_name)}</span></td>
       <td class="role-check-cell"><label class="place-row-selector"><input class="place-row-check" type="checkbox" ${selectedPlaceIds.has(p.id)?'checked':''} aria-label="選擇 ${esc(p.original_name)}（${routeRoleLabel(p.route_role)}）"><span>${routeRoleLabel(p.route_role)}</span></label></td>
-      <td><input data-f="historical_region" value="${esc(p.historical_region)}" placeholder="可修改"></td>
       <td><span class="readonly-value sentence-value">${esc(p.sentence || '—')}</span></td>
       <td class="delete-cell"><button type="button" class="row-delete-button" data-action="delete-place" aria-label="刪除 ${esc(p.original_name)}">刪除</button></td>
     </tr>`).join('');
@@ -279,15 +278,16 @@ async function saveAllPlaces() {
     const payload = {};
     tr.querySelectorAll('[data-f]').forEach(el => {
       let v = el.value;
-      if (el.dataset.f === 'historical_region' && v === '') v = null;
       payload[el.dataset.f] = v;
     });
-    await api(`/api/places/${tr.dataset.id}`, {method:'PATCH', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload)});
+    if (Object.keys(payload).length) {
+      await api(`/api/places/${tr.dataset.id}`, {method:'PATCH', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload)});
+    }
   }
   currentPlaces = await api(`/api/projects/${projectId}/places`);
   currentPlaces.sort((a,b)=>a.route_order-b.route_order);
   renderPlaces(currentPlaces);
-  setStatus($('#placesStatus'), `✓ 已儲存 ${currentPlaces.length} 個地名的分類及歷史區域。`);
+  setStatus($('#placesStatus'), `✓ 已儲存 ${currentPlaces.length} 個地名。`);
 }
 
 $('#savePlacesBtn').addEventListener('click', async () => {
@@ -327,7 +327,7 @@ $('#unconfirmPlacesBtn').addEventListener('click', async () => {
     $('#unconfirmPlacesBtn').classList.add('hidden');
     $('#step3').classList.add('hidden');
     markStep(2);
-    setStatus($('#placesStatus'), '已取消確認，可以再次修改分類及歷史區域。');
+    setStatus($('#placesStatus'), '已取消確認，可以再次選擇地名。');
   } catch (err) { setStatus($('#placesStatus'), err.message, true); }
 });
 

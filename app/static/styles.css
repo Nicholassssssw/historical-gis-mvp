@@ -107,15 +107,14 @@ th { position: sticky; top: 0; z-index: 2; padding-top: 11px; padding-bottom: 11
 tr:last-child td { border-bottom: 0; }
 tbody tr:hover { background: #fbfcf9; }
 td input, td select, td textarea { padding: 8px; }
-.review-table { min-width: 1240px; table-layout: fixed; }
+.review-table { min-width: 1070px; table-layout: fixed; }
 .review-table th { vertical-align: middle; font-size: 12px; letter-spacing: .01em; text-transform: none; }
 .review-table th:nth-child(1) { width: 58px; }
 .review-table th:nth-child(2) { width: 120px; }
 .review-table th:nth-child(3) { width: 140px; }
 .review-table th:nth-child(4) { width: 150px; }
-.review-table th:nth-child(5) { width: 170px; }
-.review-table th:nth-child(6) { width: 520px; }
-.review-table th:nth-child(7) { width: 74px; }
+.review-table th:nth-child(5) { width: 520px; }
+.review-table th:nth-child(6) { width: 74px; }
 .role-check-cell { padding-top: 15px; text-align: center; }
 .role-filter-dropdown { position: relative; width: 100%; }
 .role-filter-dropdown summary { min-height: 34px; padding: 7px 30px 7px 10px; border: 1px solid #cdd3ce; border-radius: 8px; display: flex; align-items: center; color: var(--ink); background: #fff; font-size: 12px; font-weight: 750; cursor: pointer; list-style: none; }
