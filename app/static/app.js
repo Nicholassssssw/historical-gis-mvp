@@ -5,7 +5,7 @@ let selectedPlaceIds = new Set();
 let currentGeocodeResults = [];
 let selectedCoordinatePlaceIds = new Set();
 let currentExtractionPlan = null;
-let mapState = { view:null, pointLayer:null, routeLayer:null, sketch:null, selectedGraphic:null, fullscreenCleanup:null, usingFallbackBasemap:false };
+let mapState = { view:null, pointLayer:null, routeLayer:null, sketch:null, selectedPlaceIds:new Set(), fullscreenCleanup:null, usingFallbackBasemap:false };
 
 const $ = (s) => document.querySelector(s);
 const $$ = (s) => [...document.querySelectorAll(s)];
@@ -550,7 +550,7 @@ async function initMap() {
   if (mapState.view) {
     mapState.fullscreenCleanup?.();
     mapState.view.destroy();
-    mapState = {view:null,pointLayer:null,routeLayer:null,sketch:null,selectedGraphic:null,fullscreenCleanup:null,usingFallbackBasemap:false};
+    mapState = {view:null,pointLayer:null,routeLayer:null,sketch:null,selectedPlaceIds:new Set(),fullscreenCleanup:null,usingFallbackBasemap:false};
   }
   const routeLayer = new GraphicsLayer({title:'文本次序路線'});
   const pointLayer = new GraphicsLayer({title:'行程地點'});
@@ -569,7 +569,7 @@ async function initMap() {
   const sketch = new Sketch({view, layer:pointLayer, creationMode:'single', availableCreateTools:[], visibleElements:{settingsMenu:false}});
   view.ui.add(sketch, 'top-right');
   const fullscreenCleanup = addMapFullscreenControl(view);
-  mapState = {view, pointLayer, routeLayer, sketch, Graphic, selectedGraphic:null, fullscreenCleanup, usingFallbackBasemap};
+  mapState = {view, pointLayer, routeLayer, sketch, Graphic, selectedPlaceIds:new Set(), fullscreenCleanup, usingFallbackBasemap};
 
   sketch.on('update', async (event) => {
     if (event.state !== 'complete') return;
@@ -590,19 +590,53 @@ async function initMap() {
   view.on('click', async (event) => {
     const hit = await view.hitTest(event, {include:[pointLayer]});
     const found = hit.results?.find(r => r.graphic);
-    mapState.selectedGraphic = found?.graphic || null;
-    $('#deleteMapPointBtn').disabled = !mapState.selectedGraphic;
-    if (mapState.selectedGraphic) setStatus($('#mapStatus'), `已選：${mapState.selectedGraphic.attributes.route_order}｜${mapState.selectedGraphic.attributes.name}。可用Sketch移動，或按刪除。`);
+    const graphic = found?.graphic;
+    const placeId = Number(graphic?.attributes?.place_id);
+    if (!graphic || !placeId) return;
+    if (mapState.selectedPlaceIds.has(placeId)) mapState.selectedPlaceIds.delete(placeId);
+    else mapState.selectedPlaceIds.add(placeId);
+    applyPointSymbol(graphic);
+    updateMapSelectionControls();
+    const selectedCount = mapState.selectedPlaceIds.size;
+    setStatus(
+      $('#mapStatus'),
+      selectedCount
+        ? `已選取 ${selectedCount} 個座標；可繼續點選其他座標，然後一次刪除。`
+        : '已取消所有座標選取。',
+    );
   });
 }
 
-function pointSymbol(status) {
-  if (status === 'confirmed') return {type:'simple-marker', style:'circle', color:'#16845b', size:10, outline:{color:'white',width:1}};
-  if (status === 'possible') return {type:'simple-marker', style:'triangle', color:'#d97706', size:11, outline:{color:'white',width:1}};
-  return {type:'simple-marker', style:'circle', color:'#6b7280', size:8, outline:{color:'white',width:1}};
+function pointSymbol(status, selected=false) {
+  let symbol;
+  if (status === 'confirmed') symbol = {type:'simple-marker', style:'circle', color:'#16845b', size:10, outline:{color:'white',width:1}};
+  else if (status === 'possible') symbol = {type:'simple-marker', style:'triangle', color:'#d97706', size:11, outline:{color:'white',width:1}};
+  else symbol = {type:'simple-marker', style:'circle', color:'#6b7280', size:8, outline:{color:'white',width:1}};
+  if (selected) {
+    symbol.size += 4;
+    symbol.outline = {color:'#173b46', width:3};
+  }
+  return symbol;
 }
 
-function applyPointSymbol(g) { g.symbol = pointSymbol(g.attributes?.coord_class); }
+function applyPointSymbol(g) {
+  const placeId = Number(g.attributes?.place_id);
+  g.symbol = pointSymbol(g.attributes?.coord_class, mapState.selectedPlaceIds.has(placeId));
+}
+
+function updateMapSelectionControls() {
+  const selectedCount = mapState.selectedPlaceIds.size;
+  const deleteButton = $('#deleteMapPointBtn');
+  deleteButton.disabled = selectedCount === 0;
+  deleteButton.textContent = selectedCount ? `刪除已選座標（${selectedCount}）` : '刪除已選座標';
+  $('#clearMapSelectionBtn').disabled = selectedCount === 0;
+}
+
+function clearMapSelection() {
+  mapState.selectedPlaceIds.clear();
+  mapState.pointLayer?.graphics?.forEach(applyPointSymbol);
+  updateMapSelectionControls();
+}
 
 function rebuildRoute() {
   if (!mapState.routeLayer || !mapState.pointLayer) return;
@@ -621,6 +655,7 @@ function rebuildRoute() {
 async function loadMapData() {
   if (!mapState.view) await initMap();
   const places = await api(`/api/projects/${projectId}/places`);
+  clearMapSelection();
   mapState.pointLayer.removeAll();
   for (const p of places.filter(p=>p.coordinate_selected && p.selected_lon != null && p.selected_lat != null)) {
     const g = new mapState.Graphic({
@@ -641,6 +676,11 @@ async function loadMapData() {
   setStatus($('#mapStatus'), `已顯示 ${mapState.pointLayer.graphics.length} 個有坐標地點；路線按文本次序生成${basemapNote}。`);
 }
 
+$('#clearMapSelectionBtn').addEventListener('click', () => {
+  clearMapSelection();
+  setStatus($('#mapStatus'), '已取消所有座標選取。');
+});
+
 $('#showMapBtn').addEventListener('click', async () => {
   setBusy($('#showMapBtn'), true, '載入中…');
   setStatus($('#mapStatus'), '正在載入 ArcGIS 地圖…');
@@ -652,17 +692,33 @@ $('#showMapBtn').addEventListener('click', async () => {
 });
 
 $('#deleteMapPointBtn').addEventListener('click', async () => {
-  const g = mapState.selectedGraphic;
-  if (!g) return;
-  if (!confirm(`刪除 ${g.attributes.name}？刪除後前後地點會自動重連。`)) return;
-  try {
-    await api(`/api/places/${g.attributes.place_id}`, {method:'DELETE'});
-    mapState.pointLayer.remove(g);
-    mapState.selectedGraphic = null;
-    $('#deleteMapPointBtn').disabled = true;
-    rebuildRoute();
-    setStatus($('#mapStatus'), '✓ 地點已刪除，路線已自動重連。');
-  } catch(err) { setStatus($('#mapStatus'), err.message, true); }
+  const selectedIds = [...mapState.selectedPlaceIds];
+  if (!selectedIds.length) return;
+  if (!confirm(`刪除已選的 ${selectedIds.length} 個座標？刪除後前後地點會自動重連。`)) return;
+  const button = $('#deleteMapPointBtn');
+  button.disabled = true;
+  button.textContent = `正在刪除 ${selectedIds.length} 個座標…`;
+  const failedIds = new Set();
+  let deletedCount = 0;
+  for (const placeId of selectedIds) {
+    try {
+      await api(`/api/places/${placeId}`, {method:'DELETE'});
+      const graphic = mapState.pointLayer.graphics.find(g => Number(g.attributes?.place_id) === placeId);
+      if (graphic) mapState.pointLayer.remove(graphic);
+      deletedCount += 1;
+    } catch (error) {
+      failedIds.add(placeId);
+    }
+  }
+  mapState.selectedPlaceIds = failedIds;
+  mapState.pointLayer.graphics.forEach(applyPointSymbol);
+  rebuildRoute();
+  updateMapSelectionControls();
+  if (failedIds.size) {
+    setStatus($('#mapStatus'), `已刪除 ${deletedCount} 個座標；另有 ${failedIds.size} 個未能刪除，請再試一次。`, true);
+  } else {
+    setStatus($('#mapStatus'), `✓ 已刪除 ${deletedCount} 個座標，路線已自動重連。`);
+  }
 });
 
 loadConfig().catch(err => console.error(err));
