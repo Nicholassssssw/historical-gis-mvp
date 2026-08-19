@@ -378,9 +378,9 @@ function coordinateRows() {
   return $$('#geoTable tbody tr');
 }
 
-function updateCoordinateRoleSelectionState() {
-  $$('.coordinate-role-filter-check').forEach(filterCheck => {
-    const matchingRows = coordinateRows().filter(row => rowMatchesSelectedRole(row, filterCheck.dataset.coordinateRoleFilter));
+function updateCoordinateClassSelectionState() {
+  $$('.coordinate-class-filter-check').forEach(filterCheck => {
+    const matchingRows = coordinateRows().filter(row => row.dataset.coordClass === filterCheck.dataset.coordinateClassFilter);
     const availableRows = matchingRows.filter(row => !row.querySelector('.coordinate-row-check').disabled);
     const checkedCount = availableRows.filter(row => row.querySelector('.coordinate-row-check').checked).length;
     filterCheck.disabled = availableRows.length === 0;
@@ -389,19 +389,17 @@ function updateCoordinateRoleSelectionState() {
   });
 }
 
-$$('.coordinate-role-filter-check').forEach(filterCheck => filterCheck.addEventListener('change', event => {
-  const selectedRole = event.target.dataset.coordinateRoleFilter;
-  const otherRole = selectedRole === 'passed' ? 'mentioned_only' : 'passed';
-  const otherRoleChecked = $(`.coordinate-role-filter-check[data-coordinate-role-filter="${otherRole}"]`).checked;
-  coordinateRows().filter(row => rowMatchesSelectedRole(row, selectedRole)).forEach(row => {
+$$('.coordinate-class-filter-check').forEach(filterCheck => filterCheck.addEventListener('change', event => {
+  const selectedClass = event.target.dataset.coordinateClassFilter;
+  coordinateRows().filter(row => row.dataset.coordClass === selectedClass).forEach(row => {
     const check = row.querySelector('.coordinate-row-check');
     if (check.disabled) return;
-    check.checked = event.target.checked || (otherRoleChecked && rowMatchesSelectedRole(row, otherRole));
+    check.checked = event.target.checked;
     const placeId = Number(row.dataset.placeId);
     if (check.checked) selectedCoordinatePlaceIds.add(placeId);
     else selectedCoordinatePlaceIds.delete(placeId);
   });
-  updateCoordinateRoleSelectionState();
+  updateCoordinateClassSelectionState();
   invalidateCoordinateConfirmation();
   updateCoordinateConfirmButton();
 }));
@@ -432,10 +430,9 @@ function renderGeocodes(results, {resetSelection=false, preserveSelection=false,
     const opts = (r.candidates||[]).map(c => `<option value="${c.id}" ${c.source===r.source && Math.abs(c.lon-r.lon)<1e-8 && Math.abs(c.lat-r.lat)<1e-8?'selected':''}>${esc(c.source)}｜${esc(c.candidate_name)}｜${Number(c.score).toFixed(2)}</option>`).join('');
     const hasCoordinates = r.lon != null && r.lat != null;
     const isChecked = selectedCoordinatePlaceIds.has(Number(r.place_id));
-    return `<tr data-place-id="${r.place_id}" data-route-role="${esc(r.route_role)}">
+    return `<tr data-place-id="${r.place_id}" data-coord-class="${esc(r.coord_class)}">
       <td>${r.route_order}</td><td>${esc(r.name)}</td>
-      <td class="role-check-cell"><label class="place-row-selector"><input class="coordinate-row-check" type="checkbox" ${isChecked?'checked':''} ${hasCoordinates?'':'disabled'} aria-label="確認 ${esc(r.name)} 的座標（${routeRoleLabel(r.route_role)}）"><span>${routeRoleLabel(r.route_role)}</span></label></td>
-      <td><span class="badge ${r.coord_class}">${classLabel(r.coord_class)}</span></td>
+      <td class="role-check-cell coordinate-check-cell"><label class="place-row-selector"><input class="coordinate-row-check" type="checkbox" ${isChecked?'checked':''} ${hasCoordinates?'':'disabled'} aria-label="確認 ${esc(r.name)} 的座標（${classLabel(r.coord_class)}）"><span class="badge ${r.coord_class}">${classLabel(r.coord_class)}</span></label></td>
       <td>${Number(r.score||0).toFixed(2)}</td><td>${esc(r.source||'')}</td>
       <td>${r.lon ?? ''}</td><td>${r.lat ?? ''}</td>
       <td>${opts ? `<select class="candidate-select"><option value="">--選候選--</option>${opts}</select>` : '無候選'}</td>
@@ -446,7 +443,7 @@ function renderGeocodes(results, {resetSelection=false, preserveSelection=false,
     const placeId = Number(event.target.closest('tr').dataset.placeId);
     if (event.target.checked) selectedCoordinatePlaceIds.add(placeId);
     else selectedCoordinatePlaceIds.delete(placeId);
-    updateCoordinateRoleSelectionState();
+    updateCoordinateClassSelectionState();
     invalidateCoordinateConfirmation();
     updateCoordinateConfirmButton();
   }));
@@ -463,7 +460,7 @@ function renderGeocodes(results, {resetSelection=false, preserveSelection=false,
       updateCoordinateConfirmButton();
     } catch(err){ alert(err.message); }
   }));
-  updateCoordinateRoleSelectionState();
+  updateCoordinateClassSelectionState();
   updateCoordinateConfirmButton();
 }
 

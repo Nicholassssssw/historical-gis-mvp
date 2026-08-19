@@ -127,21 +127,25 @@
           <thead><tr>
             <th class="coordinate-order-column">次序</th><th>地名</th>
             <th class="role-column">
-              <details class="role-filter-dropdown coordinate-role-filter-dropdown">
-                <summary>經過／提及</summary>
-                <div class="role-filter-menu" role="group" aria-label="按分類整批選取座標">
+              <details class="role-filter-dropdown coordinate-class-filter-dropdown">
+                <summary>座標判定</summary>
+                <div class="role-filter-menu" role="group" aria-label="按座標判定整批選取地點">
                   <label>
-                    <input class="coordinate-role-filter-check" data-coordinate-role-filter="passed" type="checkbox">
-                    <span>經過</span>
+                    <input class="coordinate-class-filter-check" data-coordinate-class-filter="confirmed" type="checkbox">
+                    <span>確認經緯度</span>
                   </label>
                   <label>
-                    <input class="coordinate-role-filter-check" data-coordinate-role-filter="mentioned_only" type="checkbox">
-                    <span>提及</span>
+                    <input class="coordinate-class-filter-check" data-coordinate-class-filter="possible" type="checkbox">
+                    <span>有可能</span>
+                  </label>
+                  <label>
+                    <input class="coordinate-class-filter-check" data-coordinate-class-filter="insufficient" type="checkbox">
+                    <span>資料不足</span>
                   </label>
                 </div>
               </details>
             </th>
-            <th>座標判定</th><th>分數</th><th>來源</th><th>經度</th><th>緯度</th><th>改用候選</th>
+            <th>分數</th><th>來源</th><th>經度</th><th>緯度</th><th>改用候選</th>
           </tr></thead>
           <tbody></tbody>
         </table>
@@ -175,6 +179,6 @@
     <p><strong>研究提示</strong>　坐標分類反映現有來源與規則，並不等同歷史位置的最終證明。</p>
   </footer>
 
-  <script type="module" src="/static/app.js?v=20260819-8"></script>
+  <script type="module" src="/static/app.js?v=20260819-9"></script>
 </body>
 </html>
