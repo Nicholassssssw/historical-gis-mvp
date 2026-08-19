@@ -630,15 +630,15 @@ async function initMap() {
 }
 
 function pointSymbol(status) {
-  if (status === 'confirmed') return {type:'simple-marker', style:'circle', color:'#16845b', size:10, outline:{color:'white',width:1}};
-  if (status === 'possible') return {type:'simple-marker', style:'triangle', color:'#d97706', size:11, outline:{color:'white',width:1}};
-  return {type:'simple-marker', style:'circle', color:'#6b7280', size:8, outline:{color:'white',width:1}};
+  if (status === 'confirmed') return {type:'simple-marker', style:'circle', color:'#9c3220', size:10, outline:{color:'#fff6df',width:1}};
+  if (status === 'possible') return {type:'simple-marker', style:'triangle', color:'#9a7838', size:11, outline:{color:'#fff6df',width:1}};
+  return {type:'simple-marker', style:'circle', color:'#766b5c', size:8, outline:{color:'#fff6df',width:1}};
 }
 
 function applyPointSymbol(g) { g.symbol = pointSymbol(g.attributes?.coord_class); }
 
 function routeSymbol() {
-  const routeColor = [58, 175, 53, 255];
+  const routeColor = [71, 41, 26, 255];
   return {
     type:'cim',
     data:{

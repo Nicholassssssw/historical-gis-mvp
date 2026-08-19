@@ -9,26 +9,29 @@
   <meta property="og:image" content="__BASE_URL__/static/og.png" />
   <meta name="twitter:card" content="summary_large_image" />
   <title>歷史地理資訊系統研究工作台</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@400;500;600;700;900&family=Ma+Shan+Zheng&display=swap" />
   <link rel="preconnect" href="https://js.arcgis.com" />
   <link rel="stylesheet" href="https://js.arcgis.com/5.1/esri/themes/light/main.css" />
   <script type="module" src="https://js.arcgis.com/5.1/"></script>
-  <link rel="stylesheet" href="/static/styles.css?v=20260819-3" />
+  <link rel="stylesheet" href="/static/styles.css?v=20260819-5" />
 </head>
 <body>
   <header class="site-header">
     <div class="header-inner">
       <a class="brand" href="/" aria-label="歷史地理資訊系統首頁">
-        <span class="brand-mark" aria-hidden="true">史地</span>
+        <span class="brand-mark" aria-hidden="true">輿</span>
         <span><strong>歷史地理資訊系統</strong><small>研究工作台</small></span>
       </a>
       <nav class="progress header-progress" aria-label="研究流程進度">
-        <div class="progress-step active" data-step="1"><span>1</span><div><strong>上載</strong><small>加入文本</small></div></div>
+        <div class="progress-step active" data-step="1"><span>壹</span><div><strong>上載</strong><small>加入文本</small></div></div>
         <div class="progress-line"></div>
-        <div class="progress-step" data-step="2"><span>2</span><div><strong>抽取</strong><small>選擇地名</small></div></div>
+        <div class="progress-step" data-step="2"><span>貳</span><div><strong>抽取</strong><small>選擇地名</small></div></div>
         <div class="progress-line"></div>
-        <div class="progress-step" data-step="3"><span>3</span><div><strong>配對</strong><small>檢視坐標</small></div></div>
+        <div class="progress-step" data-step="3"><span>叁</span><div><strong>配對</strong><small>檢視坐標</small></div></div>
         <div class="progress-line"></div>
-        <div class="progress-step" data-step="4"><span>4</span><div><strong>製圖</strong><small>編輯路線</small></div></div>
+        <div class="progress-step" data-step="4"><span>肆</span><div><strong>製圖</strong><small>編輯路線</small></div></div>
       </nav>
       <div class="provider-pill" id="providerStatus"><i></i><span>連線中…</span></div>
     </div>
@@ -36,10 +39,24 @@
 
   <main>
     <section class="intro" aria-labelledby="page-title">
-      <p class="eyebrow">文本 → 地名 → 座標 → 地圖</p>
-      <h1 id="page-title">把歷史文本，整理成可追溯的地圖。</h1>
-      <p>DeepSeek 抽取路線地名，你負責校訂；系統保留坐標來源、候選與人工修改記錄。</p>
+      <div class="intro-copy">
+        <p class="eyebrow">文本　·　地名　·　座標　·　地圖</p>
+        <h1 id="page-title">把歷史文本，整理成可追溯的地圖。</h1>
+        <p>DeepSeek 抽取路線地名，你負責校訂；系統保留坐標來源、候選與人工修改記錄。</p>
+      </div>
+      <aside class="album-landscape" aria-hidden="true">
+        <div class="landscape-frame">
+          <i class="landscape-moon"></i>
+          <i class="mountain mountain-back"></i>
+          <i class="mountain mountain-mid"></i>
+          <i class="mountain mountain-front"></i>
+          <i class="mist mist-one"></i>
+          <i class="mist mist-two"></i>
+        </div>
+        <p class="vertical-motto">循文覓跡　因地成圖</p>
+      </aside>
     </section>
+    <div class="ornamental-divider" aria-hidden="true"><span>◆</span></div>
 
     <section class="step-card" id="step1">
       <div class="step-heading">
@@ -179,6 +196,6 @@
     <p><strong>研究提示</strong>　坐標分類反映現有來源與規則，並不等同歷史位置的最終證明。</p>
   </footer>
 
-  <script type="module" src="/static/app.js?v=20260819-10"></script>
+  <script type="module" src="/static/app.js?v=20260819-11"></script>
 </body>
 </html>
