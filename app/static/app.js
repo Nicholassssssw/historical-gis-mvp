@@ -274,28 +274,6 @@ $('#placesTable tbody').addEventListener('click', async event => {
   }
 });
 
-async function saveAllPlaces() {
-  const rows = $$('#placesTable tbody tr');
-  for (const tr of rows) {
-    const payload = {};
-    tr.querySelectorAll('[data-f]').forEach(el => {
-      let v = el.value;
-      payload[el.dataset.f] = v;
-    });
-    if (Object.keys(payload).length) {
-      await api(`/api/places/${tr.dataset.id}`, {method:'PATCH', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload)});
-    }
-  }
-  currentPlaces = await api(`/api/projects/${projectId}/places`);
-  currentPlaces.sort((a,b)=>a.route_order-b.route_order);
-  renderPlaces(currentPlaces);
-  setStatus($('#placesStatus'), `✓ 已儲存 ${currentPlaces.length} 個地名。`);
-}
-
-$('#savePlacesBtn').addEventListener('click', async () => {
-  try { await saveAllPlaces(); } catch (err) { setStatus($('#placesStatus'), err.message, true); }
-});
-
 $('#confirmPlacesBtn').addEventListener('click', async () => {
   if (selectedPlaceIds.size === 0) {
     setStatus($('#placesStatus'), '請至少勾選一個地名。', true);
@@ -303,7 +281,6 @@ $('#confirmPlacesBtn').addEventListener('click', async () => {
   }
   setBusy($('#confirmPlacesBtn'), true, '確認中…');
   try {
-    await saveAllPlaces();
     const r = await api(`/api/projects/${projectId}/confirm-places`, {
       method:'POST',
       headers:{'Content-Type':'application/json'},
@@ -671,7 +648,7 @@ async function loadMapData() {
 async function showCurrentMap() {
   setBusy($('#showMapBtn'), true, '載入中…');
   setStatus($('#mapStatus'), '正在載入 ArcGIS 地圖…');
-  if (!mapState.view) $('#mapView').innerHTML = '<div class="map-placeholder">正在載入 ArcGIS 地圖，首次載入可能需要約 20 秒…</div>';
+  if (!mapState.view) $('#mapView').innerHTML = '<div class="map-placeholder">正在載入 ArcGIS 地圖…</div>';
   try {
     $('#downloadMap').href = `/api/projects/${projectId}/map.geojson?download=true`;
     await loadMapData();
