@@ -87,7 +87,21 @@
         <table id="placesTable" class="review-table">
           <thead><tr>
             <th>次序</th><th>日期</th><th>地名</th>
-            <th class="role-column">選擇</th>
+            <th class="role-column">
+              <details class="role-filter-dropdown">
+                <summary>經過／提及</summary>
+                <div class="role-filter-menu" role="group" aria-label="按分類整批選取地名">
+                  <label>
+                    <input class="role-filter-check" data-role-filter="passed" type="checkbox">
+                    <span>經過</span>
+                  </label>
+                  <label>
+                    <input class="role-filter-check" data-role-filter="mentioned_only" type="checkbox">
+                    <span>提及</span>
+                  </label>
+                </div>
+              </details>
+            </th>
             <th>原句</th><th class="delete-column">刪除</th>
           </tr></thead>
           <tbody></tbody>

@@ -187,7 +187,7 @@ $('#extractBtn').addEventListener('click', async () => {
     renderPlaces(currentPlaces);
     $('#step2').classList.remove('hidden');
     markStep(2);
-    setStatus($('#uploadStatus'), `已抽取 ${result.count} 個地名。請逐項勾選需要進入經緯度配對的地名。`);
+    setStatus($('#uploadStatus'), `已抽取 ${result.count} 個地名。可逐項勾選，亦可按「經過／提及」整批選擇；第三部分只會配對已勾選資料。`);
     $('#step2').scrollIntoView({behavior:'smooth'});
   } catch (err) {
     setStatus($('#uploadStatus'), err.message, true);
@@ -201,7 +201,7 @@ function renderPlaces(places) {
   const liveIds = new Set(places.map(place => place.id));
   selectedPlaceIds = new Set([...selectedPlaceIds].filter(id => liveIds.has(id)));
   tbody.innerHTML = places.map(p => `
-    <tr data-id="${p.id}">
+    <tr data-id="${p.id}" data-route-role="${esc(p.route_role)}">
       <td><span class="readonly-value order-value">${p.route_order}</span></td>
       <td><span class="readonly-value">${esc(p.date_text || '—')}</span></td>
       <td><span class="readonly-value place-value">${esc(p.original_name)}</span></td>
@@ -209,13 +209,49 @@ function renderPlaces(places) {
       <td><span class="readonly-value sentence-value">${esc(p.sentence || '—')}</span></td>
       <td class="delete-cell"><button type="button" class="row-delete-button" data-action="delete-place" aria-label="刪除 ${esc(p.original_name)}">刪除</button></td>
     </tr>`).join('');
+  updatePlaceSelectionState();
 }
+
+function placeRows() {
+  return $$('#placesTable tbody tr');
+}
+
+function rowMatchesSelectedRole(row, selectedRole) {
+  const rowRole = row.dataset.routeRole;
+  if (rowRole === 'passed_and_mentioned') return true;
+  return rowRole === selectedRole;
+}
+
+function updatePlaceSelectionState() {
+  $$('.role-filter-check').forEach(filterCheck => {
+    const matchingRows = placeRows().filter(row => rowMatchesSelectedRole(row, filterCheck.dataset.roleFilter));
+    const checkedCount = matchingRows.filter(row => row.querySelector('.place-row-check').checked).length;
+    filterCheck.disabled = matchingRows.length === 0;
+    filterCheck.checked = matchingRows.length > 0 && checkedCount === matchingRows.length;
+    filterCheck.indeterminate = checkedCount > 0 && checkedCount < matchingRows.length;
+  });
+}
+
+$$('.role-filter-check').forEach(filterCheck => filterCheck.addEventListener('change', event => {
+  const selectedRole = event.target.dataset.roleFilter;
+  const otherRole = selectedRole === 'passed' ? 'mentioned_only' : 'passed';
+  const otherRoleChecked = $(`.role-filter-check[data-role-filter="${otherRole}"]`).checked;
+  placeRows().filter(row => rowMatchesSelectedRole(row, selectedRole)).forEach(row => {
+    const check = row.querySelector('.place-row-check');
+    check.checked = event.target.checked || (otherRoleChecked && rowMatchesSelectedRole(row, otherRole));
+    const placeId = Number(row.dataset.id);
+    if (check.checked) selectedPlaceIds.add(placeId);
+    else selectedPlaceIds.delete(placeId);
+  });
+  updatePlaceSelectionState();
+}));
 
 $('#placesTable tbody').addEventListener('change', event => {
   if (event.target.classList.contains('place-row-check')) {
     const placeId = Number(event.target.closest('tr').dataset.id);
     if (event.target.checked) selectedPlaceIds.add(placeId);
     else selectedPlaceIds.delete(placeId);
+    updatePlaceSelectionState();
   }
 });
 
