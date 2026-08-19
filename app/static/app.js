@@ -568,6 +568,7 @@ async function initMap() {
   $('#mapView').replaceChildren();
   const view = new MapView({container:'mapView', map, center:[120.2,30.3], zoom:7});
   await view.when();
+  view.popupEnabled = false;
   const sketch = new Sketch({view, layer:pointLayer, creationMode:'single', availableCreateTools:[], visibleElements:{settingsMenu:false}});
   view.ui.add(sketch, 'top-right');
   const fullscreenCleanup = addMapFullscreenControl(view);
@@ -583,6 +584,8 @@ async function initMap() {
         await api(`/api/places/${id}`, {method:'PATCH', headers:{'Content-Type':'application/json'}, body:JSON.stringify({selected_lon:geom.longitude, selected_lat:geom.latitude})});
         g.attributes.coord_class = 'confirmed';
         g.attributes.coord_source = 'manual';
+        g.attributes.longitude = Number(geom.longitude).toFixed(6);
+        g.attributes.latitude = Number(geom.latitude).toFixed(6);
         applyPointSymbol(g);
       } catch(err) { setStatus($('#mapStatus'), err.message, true); }
     }
@@ -594,7 +597,16 @@ async function initMap() {
     const found = hit.results?.find(r => r.graphic);
     mapState.selectedGraphic = found?.graphic || null;
     $('#deleteMapPointBtn').disabled = !mapState.selectedGraphic;
-    if (mapState.selectedGraphic) setStatus($('#mapStatus'), `已選：${mapState.selectedGraphic.attributes.route_order}｜${mapState.selectedGraphic.attributes.name}。可用Sketch移動，或按刪除。`);
+    if (mapState.selectedGraphic) {
+      await view.openPopup({
+        features:[mapState.selectedGraphic],
+        location:mapState.selectedGraphic.geometry,
+        updateLocationEnabled:true,
+      }).catch(()=>{});
+      setStatus($('#mapStatus'), `已選：${mapState.selectedGraphic.attributes.route_order}｜${mapState.selectedGraphic.attributes.name}。可在彈出視窗查看資料、用 Sketch 移動，或按刪除。`);
+    } else {
+      await view.closePopup().catch(()=>{});
+    }
   });
 }
 
@@ -627,10 +639,23 @@ async function loadMapData() {
   for (const p of places.filter(p=>p.coordinate_selected && p.selected_lon != null && p.selected_lat != null)) {
     const g = new mapState.Graphic({
       geometry:{type:'point', longitude:p.selected_lon, latitude:p.selected_lat, spatialReference:{wkid:4326}},
-      attributes:{place_id:p.id, route_order:p.route_order, name:p.normalized_name, coord_class:p.coord_class, coord_source:p.coord_source},
+      attributes:{
+        place_id:p.id,
+        route_order:p.route_order,
+        name:p.normalized_name,
+        longitude:Number(p.selected_lon).toFixed(6),
+        latitude:Number(p.selected_lat).toFixed(6),
+        coord_class:p.coord_class,
+        coord_source:p.coord_source || '未提供',
+        source_sentence:p.sentence || '—',
+      },
       symbol:pointSymbol(p.coord_class),
       popupTemplate:{title:`{route_order}｜{name}`, content:[{type:'fields', fieldInfos:[
-        {fieldName:'coord_class',label:'分類'}, {fieldName:'coord_source',label:'坐標來源'}
+        {fieldName:'name',label:'地名'},
+        {fieldName:'longitude',label:'經度'},
+        {fieldName:'latitude',label:'緯度'},
+        {fieldName:'coord_source',label:'經緯度資料來源'},
+        {fieldName:'source_sentence',label:'原句'}
       ]}]}
     });
     mapState.pointLayer.add(g);
