@@ -374,6 +374,38 @@ function updateCoordinateConfirmButton() {
   button.textContent = `確認座標（${selectedCoordinatePlaceIds.size}）`;
 }
 
+function coordinateRows() {
+  return $$('#geoTable tbody tr');
+}
+
+function updateCoordinateRoleSelectionState() {
+  $$('.coordinate-role-filter-check').forEach(filterCheck => {
+    const matchingRows = coordinateRows().filter(row => rowMatchesSelectedRole(row, filterCheck.dataset.coordinateRoleFilter));
+    const availableRows = matchingRows.filter(row => !row.querySelector('.coordinate-row-check').disabled);
+    const checkedCount = availableRows.filter(row => row.querySelector('.coordinate-row-check').checked).length;
+    filterCheck.disabled = availableRows.length === 0;
+    filterCheck.checked = availableRows.length > 0 && checkedCount === availableRows.length;
+    filterCheck.indeterminate = checkedCount > 0 && checkedCount < availableRows.length;
+  });
+}
+
+$$('.coordinate-role-filter-check').forEach(filterCheck => filterCheck.addEventListener('change', event => {
+  const selectedRole = event.target.dataset.coordinateRoleFilter;
+  const otherRole = selectedRole === 'passed' ? 'mentioned_only' : 'passed';
+  const otherRoleChecked = $(`.coordinate-role-filter-check[data-coordinate-role-filter="${otherRole}"]`).checked;
+  coordinateRows().filter(row => rowMatchesSelectedRole(row, selectedRole)).forEach(row => {
+    const check = row.querySelector('.coordinate-row-check');
+    if (check.disabled) return;
+    check.checked = event.target.checked || (otherRoleChecked && rowMatchesSelectedRole(row, otherRole));
+    const placeId = Number(row.dataset.placeId);
+    if (check.checked) selectedCoordinatePlaceIds.add(placeId);
+    else selectedCoordinatePlaceIds.delete(placeId);
+  });
+  updateCoordinateRoleSelectionState();
+  invalidateCoordinateConfirmation();
+  updateCoordinateConfirmButton();
+}));
+
 function invalidateCoordinateConfirmation() {
   $('#step4').classList.add('hidden');
   markStep(3);
@@ -400,9 +432,9 @@ function renderGeocodes(results, {resetSelection=false, preserveSelection=false,
     const opts = (r.candidates||[]).map(c => `<option value="${c.id}" ${c.source===r.source && Math.abs(c.lon-r.lon)<1e-8 && Math.abs(c.lat-r.lat)<1e-8?'selected':''}>${esc(c.source)}｜${esc(c.candidate_name)}｜${Number(c.score).toFixed(2)}</option>`).join('');
     const hasCoordinates = r.lon != null && r.lat != null;
     const isChecked = selectedCoordinatePlaceIds.has(Number(r.place_id));
-    return `<tr data-place-id="${r.place_id}">
-      <td class="coordinate-check-cell"><input class="coordinate-row-check" type="checkbox" ${isChecked?'checked':''} ${hasCoordinates?'':'disabled'} aria-label="確認 ${esc(r.name)} 的座標"></td>
+    return `<tr data-place-id="${r.place_id}" data-route-role="${esc(r.route_role)}">
       <td>${r.route_order}</td><td>${esc(r.name)}</td>
+      <td class="role-check-cell"><label class="place-row-selector"><input class="coordinate-row-check" type="checkbox" ${isChecked?'checked':''} ${hasCoordinates?'':'disabled'} aria-label="確認 ${esc(r.name)} 的座標（${routeRoleLabel(r.route_role)}）"><span>${routeRoleLabel(r.route_role)}</span></label></td>
       <td><span class="badge ${r.coord_class}">${classLabel(r.coord_class)}</span></td>
       <td>${Number(r.score||0).toFixed(2)}</td><td>${esc(r.source||'')}</td>
       <td>${r.lon ?? ''}</td><td>${r.lat ?? ''}</td>
@@ -414,6 +446,7 @@ function renderGeocodes(results, {resetSelection=false, preserveSelection=false,
     const placeId = Number(event.target.closest('tr').dataset.placeId);
     if (event.target.checked) selectedCoordinatePlaceIds.add(placeId);
     else selectedCoordinatePlaceIds.delete(placeId);
+    updateCoordinateRoleSelectionState();
     invalidateCoordinateConfirmation();
     updateCoordinateConfirmButton();
   }));
@@ -424,12 +457,13 @@ function renderGeocodes(results, {resetSelection=false, preserveSelection=false,
     try {
       await api(`/api/places/${tr.dataset.placeId}/select-candidate/${e.target.value}`, {method:'POST'});
       const places = await api(`/api/projects/${projectId}/places?candidates=true`);
-      const converted = places.filter(p=>p.user_selected).map(p=>({place_id:p.id, route_order:p.route_order, name:p.normalized_name, coord_class:p.coord_class, score:p.coord_score, source:p.coord_source, lon:p.selected_lon, lat:p.selected_lat, coordinate_selected:p.coordinate_selected, candidates:p.candidates}));
+      const converted = places.filter(p=>p.user_selected).map(p=>({place_id:p.id, route_order:p.route_order, name:p.normalized_name, route_role:p.route_role, coord_class:p.coord_class, score:p.coord_score, source:p.coord_source, lon:p.selected_lon, lat:p.selected_lat, coordinate_selected:p.coordinate_selected, candidates:p.candidates}));
       renderGeocodes(converted, {preserveSelection:true, forceSelectedPlaceId:Number(tr.dataset.placeId)});
       invalidateCoordinateConfirmation();
       updateCoordinateConfirmButton();
     } catch(err){ alert(err.message); }
   }));
+  updateCoordinateRoleSelectionState();
   updateCoordinateConfirmButton();
 }
 

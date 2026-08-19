@@ -1,10 +1,12 @@
+import json
+
 import pytest
 from fastapi import HTTPException
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from app.db import Base
-from app.main import _apply_detected_document_context, config as app_config, confirm_coordinates, confirm_places
+from app.main import _apply_detected_document_context, config as app_config, confirm_coordinates, confirm_places, map_geojson
 from app.models import Place, Project
 from app.schemas import CoordinateSelectionConfirm, PlaceExtraction, PlaceSelectionConfirm
 
@@ -221,3 +223,21 @@ def test_coordinate_confirmation_keeps_only_checked_places_for_mapping(db):
     assert passed.coordinate_selected is True
     assert mentioned.coordinate_selected is False
     assert project.stage == "coordinates_confirmed"
+
+
+def test_geojson_download_supports_chinese_project_title(db):
+    project, passed, _ = make_project_with_places(db)
+    project.title = "徐霞客遊記"
+    passed.selected_lon = 120.15
+    passed.selected_lat = 30.28
+    passed.coord_source = "CHGIS"
+    passed.coordinate_selected = True
+    db.commit()
+
+    response = map_geojson(project.id, download=True, db=db)
+    payload = json.loads(response.body)
+
+    assert response.status_code == 200
+    assert response.media_type == "application/geo+json"
+    assert "filename*=UTF-8''" in response.headers["content-disposition"]
+    assert payload["features"][0]["properties"]["coord_source"] == "CHGIS"

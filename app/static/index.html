@@ -125,7 +125,23 @@
       <div class="table-wrap compact-table">
         <table id="geoTable">
           <thead><tr>
-            <th class="coordinate-check-column"><span class="sr-only">選取</span></th><th class="coordinate-order-column">次序</th><th>地名</th><th>分類</th><th>分數</th><th>來源</th><th>經度</th><th>緯度</th><th>改用候選</th>
+            <th class="coordinate-order-column">次序</th><th>地名</th>
+            <th class="role-column">
+              <details class="role-filter-dropdown coordinate-role-filter-dropdown">
+                <summary>經過／提及</summary>
+                <div class="role-filter-menu" role="group" aria-label="按分類整批選取座標">
+                  <label>
+                    <input class="coordinate-role-filter-check" data-coordinate-role-filter="passed" type="checkbox">
+                    <span>經過</span>
+                  </label>
+                  <label>
+                    <input class="coordinate-role-filter-check" data-coordinate-role-filter="mentioned_only" type="checkbox">
+                    <span>提及</span>
+                  </label>
+                </div>
+              </details>
+            </th>
+            <th>座標判定</th><th>分數</th><th>來源</th><th>經度</th><th>緯度</th><th>改用候選</th>
           </tr></thead>
           <tbody></tbody>
         </table>
@@ -160,6 +176,6 @@
     <p><strong>研究提示</strong>　坐標分類反映現有來源與規則，並不等同歷史位置的最終證明。</p>
   </footer>
 
-  <script type="module" src="/static/app.js?v=20260819-5"></script>
+  <script type="module" src="/static/app.js?v=20260819-6"></script>
 </body>
 </html>

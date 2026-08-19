@@ -204,6 +204,7 @@ async def geocode_project(db: Session, project: Project, progress_callback=None)
             "place_id": place.id,
             "route_order": place.route_order,
             "name": place.normalized_name,
+            "route_role": place.route_role,
             "coord_class": place.coord_class,
             "score": place.coord_score,
             "source": place.coord_source,

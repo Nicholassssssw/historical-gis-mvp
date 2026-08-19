@@ -5,6 +5,7 @@ import queue
 import threading
 from pathlib import Path
 from typing import Annotated
+from urllib.parse import quote
 
 from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, UploadFile
@@ -729,6 +730,13 @@ def map_geojson(project_id: int, download: bool = False, db: Session = Depends(g
     data = project_geojson(db, project)
     headers = {}
     if download:
-        safe = "".join(c if c.isalnum() or c in "-_" else "_" for c in project.title)[:80]
-        headers["Content-Disposition"] = f'attachment; filename="{safe or "map"}.geojson"'
-    return JSONResponse(data, media_type="application/geo+json", headers=headers)
+        safe_ascii = "".join(
+            c if c.isascii() and (c.isalnum() or c in "-_") else "_"
+            for c in project.title
+        )[:80].strip("_") or "map"
+        encoded_name = quote(f"{project.title[:80] or 'map'}.geojson", safe="")
+        headers["Content-Disposition"] = (
+            f'attachment; filename="{safe_ascii}.geojson"; '
+            f"filename*=UTF-8''{encoded_name}"
+        )
+    return JSONResponse(content=data, media_type="application/geo+json", headers=headers)
