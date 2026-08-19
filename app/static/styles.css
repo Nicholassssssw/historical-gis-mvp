@@ -150,7 +150,8 @@ td input, td select, td textarea { padding: 8px; }
 .badge.insufficient { color: #5d6764; background: #ecefeb; }
 
 .map-shell { overflow: hidden; border: 1px solid #dfe2dc; border-radius: 14px; background: #f9faf7; }
-.map { height: 620px; width: 100%; }
+.map { position: relative; height: 620px; width: 100%; }
+.map-placeholder { position: absolute; inset: 0; display: grid; place-items: center; padding: 24px; color: #66736f; background: linear-gradient(135deg, #f8faf7, #eef4f1); font-size: 13px; font-weight: 700; text-align: center; }
 .map:fullscreen, .map:-webkit-full-screen { width: 100vw; height: 100vh; background: #f9faf7; }
 .map-fullscreen-button > span { display: inline-block; font-size: 20px; line-height: 1; transform: translateY(-1px); }
 .map-meta { min-height: 52px; padding: 10px 14px; display: flex; align-items: center; justify-content: space-between; gap: 16px; border-top: 1px solid #e0e3dc; }

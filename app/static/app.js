@@ -473,6 +473,7 @@ $('#confirmCoordinatesBtn').addEventListener('click', async () => {
     $('#step4').classList.remove('hidden');
     markStep(4);
     $('#step4').scrollIntoView({behavior:'smooth'});
+    await showCurrentMap();
   } catch (err) {
     setStatus($('#geoStatus'), err.message, true);
   } finally {
@@ -564,6 +565,7 @@ async function initMap() {
     await map.basemap.load();
     usingFallbackBasemap = true;
   }
+  $('#mapView').replaceChildren();
   const view = new MapView({container:'mapView', map, center:[120.2,30.3], zoom:7});
   await view.when();
   const sketch = new Sketch({view, layer:pointLayer, creationMode:'single', availableCreateTools:[], visibleElements:{settingsMenu:false}});
@@ -641,14 +643,22 @@ async function loadMapData() {
   setStatus($('#mapStatus'), `已顯示 ${mapState.pointLayer.graphics.length} 個有坐標地點；路線按文本次序生成${basemapNote}。`);
 }
 
-$('#showMapBtn').addEventListener('click', async () => {
+async function showCurrentMap() {
   setBusy($('#showMapBtn'), true, '載入中…');
   setStatus($('#mapStatus'), '正在載入 ArcGIS 地圖…');
+  if (!mapState.view) $('#mapView').innerHTML = '<div class="map-placeholder">正在載入 ArcGIS 地圖，首次載入可能需要約 20 秒…</div>';
   try {
     $('#downloadMap').href = `/api/projects/${projectId}/map.geojson?download=true`;
     await loadMapData();
-  } catch(err) { setStatus($('#mapStatus'), err.message, true); }
+  } catch(err) {
+    if (!mapState.view) $('#mapView').innerHTML = '<div class="map-placeholder">地圖未能載入，請按「載入地圖」重試</div>';
+    setStatus($('#mapStatus'), err.message, true);
+  }
   finally { setBusy($('#showMapBtn'), false, '載入中…'); }
+}
+
+$('#showMapBtn').addEventListener('click', async () => {
+  await showCurrentMap();
 });
 
 $('#deleteMapPointBtn').addEventListener('click', async () => {

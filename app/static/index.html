@@ -12,7 +12,7 @@
   <link rel="preconnect" href="https://js.arcgis.com" />
   <link rel="stylesheet" href="https://js.arcgis.com/5.1/esri/themes/light/main.css" />
   <script type="module" src="https://js.arcgis.com/5.1/"></script>
-  <link rel="stylesheet" href="/static/styles.css?v=20260819-2" />
+  <link rel="stylesheet" href="/static/styles.css?v=20260819-3" />
 </head>
 <body>
   <header class="site-header">
@@ -144,7 +144,7 @@
         <button id="deleteMapPointBtn" class="button-danger" disabled>刪除所選地點</button>
       </div>
       <div class="map-shell">
-        <div id="mapView" class="map"></div>
+        <div id="mapView" class="map"><div class="map-placeholder">確認座標後會自動載入 ArcGIS 地圖</div></div>
         <div class="map-meta">
           <div class="legend" aria-label="Coordinate confidence legend">
             <span><i class="dot confirmed"></i>已確認</span>
@@ -161,6 +161,6 @@
     <p><strong>研究提示</strong>　坐標分類反映現有來源與規則，並不等同歷史位置的最終證明。</p>
   </footer>
 
-  <script type="module" src="/static/app.js?v=20260819-2"></script>
+  <script type="module" src="/static/app.js?v=20260819-3"></script>
 </body>
 </html>
