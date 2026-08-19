@@ -552,12 +552,9 @@ def confirm_places(
     active_ids = {place.id for place in active_places}
     if requested_ids - active_ids:
         raise HTTPException(400, "選取資料已經改變，請重新整理後再試。")
-    selected_count = sum(
-        place.id in requested_ids and place.route_role in MAPPED_ROUTE_ROLES
-        for place in active_places
-    )
+    selected_count = len(requested_ids)
     if selected_count == 0:
-        raise HTTPException(400, "請至少把一個地名選為「經過」或「經過及提及」。")
+        raise HTTPException(400, "請至少勾選一個地名。")
 
     for place in active_places:
         place.user_selected = place.id in requested_ids
@@ -569,6 +566,10 @@ def confirm_places(
         "ok": True,
         "count": count,
         "selected_count": selected_count,
+        "route_count": sum(
+            place.id in requested_ids and place.route_role in MAPPED_ROUTE_ROLES
+            for place in active_places
+        ),
         "mentioned_count": sum(
             place.id in requested_ids and place.route_role not in MAPPED_ROUTE_ROLES
             for place in active_places

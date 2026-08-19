@@ -65,6 +65,15 @@ def test_geocoding_keeps_all_selected_records_and_reports_database_progress(monk
             route_role="mentioned_only",
             user_selected=True,
         ),
+        Place(
+            project_id=project.id,
+            route_order=3,
+            original_name="蘇州",
+            normalized_name="蘇州",
+            sentence="另載蘇州。",
+            route_role="mentioned_only",
+            user_selected=False,
+        ),
     ])
     db.commit()
     events = []
@@ -72,6 +81,7 @@ def test_geocoding_keeps_all_selected_records_and_reports_database_progress(monk
     results = asyncio.run(geocoder.geocode_project(db, project, events.append))
 
     assert len(results) == 2
+    assert [result["name"] for result in results] == ["杭州", "天目山"]
     assert results[0]["coord_class"] == "confirmed"
     assert results[0]["coordinate_selected"] is True
     assert results[1]["coord_class"] == "insufficient"

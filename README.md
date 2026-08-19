@@ -2,7 +2,7 @@
 
 一個可直接部署的研究型 MVP：
 
-**Upload文本 → DeepSeek 抽取地名 → 用戶選擇經過/提及 → 用戶確認 → 多來源經緯度配對 → Generate GeoJSON map file → ArcGIS Maps SDK顯示 → 拖動/刪除點 → 路線自動更新。**
+**上載文本 → DeepSeek 抽取地名 → 用戶逐項勾選 → 只配對已勾選地名 → 產生 GeoJSON 地圖檔案 → ArcGIS Maps SDK 顯示 → 拖動／刪除點 → 路線自動更新。**
 
 ## 1. 已實作流程
 

@@ -57,7 +57,7 @@ def test_empty_confirmation_can_be_retried_then_saves_user_selection(db):
     project, passed, mentioned = make_project_with_places(db)
 
     for _ in range(2):
-        with pytest.raises(HTTPException, match="至少把一個地名") as error:
+        with pytest.raises(HTTPException, match="至少勾選一個地名") as error:
             confirm_places(project.id, PlaceSelectionConfirm(place_ids=[]), db)
         assert error.value.status_code == 400
 
@@ -69,26 +69,29 @@ def test_empty_confirmation_can_be_retried_then_saves_user_selection(db):
 
     db.refresh(passed)
     db.refresh(mentioned)
-    assert result["selected_count"] == 1
+    assert result["selected_count"] == 2
+    assert result["route_count"] == 1
     assert result["mentioned_count"] == 1
     assert passed.user_selected is True
     assert mentioned.user_selected is True
 
 
-def test_mentioned_only_selection_does_not_confirm_a_route(db):
+def test_mentioned_only_selection_is_available_to_coordinate_matching(db):
     project, passed, mentioned = make_project_with_places(db)
 
-    with pytest.raises(HTTPException, match="至少把一個地名"):
-        confirm_places(
-            project.id,
-            PlaceSelectionConfirm(place_ids=[mentioned.id]),
-            db,
-        )
+    result = confirm_places(
+        project.id,
+        PlaceSelectionConfirm(place_ids=[mentioned.id]),
+        db,
+    )
 
     db.refresh(passed)
     db.refresh(mentioned)
+    assert result["selected_count"] == 1
+    assert result["route_count"] == 0
+    assert result["mentioned_count"] == 1
     assert passed.user_selected is False
-    assert mentioned.user_selected is False
+    assert mentioned.user_selected is True
 
 
 def test_detected_document_context_fills_only_omitted_upload_fields():
