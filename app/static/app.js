@@ -86,6 +86,15 @@ function setBusy(button, busy, busyLabel) {
   button.textContent = busy ? busyLabel : button.dataset.label;
 }
 
+function setGeocodeButtonMode(completed) {
+  const button = $('#geocodeBtn');
+  const label = completed ? '重新配對座標' : '開始配對座標';
+  button.dataset.label = label;
+  button.textContent = label;
+  button.classList.toggle('button-accent', !completed);
+  button.classList.toggle('button-quiet', completed);
+}
+
 async function loadConfig() {
   config = await api('/api/config');
   const provider = $('#providerStatus');
@@ -310,6 +319,7 @@ $('#unconfirmPlacesBtn').addEventListener('click', async () => {
     currentGeocodeResults = [];
     selectedCoordinatePlaceIds.clear();
     $('#geoTable tbody').innerHTML = '';
+    setGeocodeButtonMode(false);
     markStep(2);
     setStatus($('#placesStatus'), '已取消確認，可以再次選擇地名。');
   } catch (err) { setStatus($('#placesStatus'), err.message, true); }
@@ -358,6 +368,7 @@ $('#geocodeBtn').addEventListener('click', async () => {
     setStatus($('#geoStatus'), `✓ 經緯度配對完成：已顯示全部 ${r.count} 個地點。請勾選並確認要加入地圖的座標。`);
     $('#confirmCoordinatesBtn').classList.remove('hidden');
     updateCoordinateConfirmButton();
+    setGeocodeButtonMode(true);
     markStep(3);
   } catch (err) {
     setStatus($('#geoStatus'), err.message, true);
