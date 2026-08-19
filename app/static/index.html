@@ -3,25 +3,25 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <meta name="description" content="從歷史文本抽取地名、配對座標，建立可追溯及可修訂的研究地圖。" />
-  <meta property="og:title" content="歷史地理資訊系統研究工作台" />
-  <meta property="og:description" content="由歷史文本建立保留來源、可人工修訂的路線地圖。" />
+  <meta name="description" content="Extract historical place names, reconcile coordinates, and build a traceable research map." />
+  <meta property="og:title" content="Historical GIS Workspace" />
+  <meta property="og:description" content="From historical text to a source-aware, editable route map." />
   <meta property="og:image" content="__BASE_URL__/static/og.png" />
   <meta name="twitter:card" content="summary_large_image" />
-  <title>歷史地理資訊系統研究工作台</title>
+  <title>Historical GIS Workspace</title>
   <link rel="preconnect" href="https://js.arcgis.com" />
   <link rel="stylesheet" href="https://js.arcgis.com/5.1/esri/themes/light/main.css" />
   <script type="module" src="https://js.arcgis.com/5.1/"></script>
-  <link rel="stylesheet" href="/static/styles.css?v=20260819-1" />
+  <link rel="stylesheet" href="/static/styles.css?v=20260818-5" />
 </head>
 <body>
   <header class="site-header">
     <div class="header-inner">
-      <a class="brand" href="/" aria-label="歷史地理資訊系統首頁">
-        <span class="brand-mark" aria-hidden="true">史地</span>
-        <span><strong>歷史地理資訊系統</strong><small>研究工作台</small></span>
+      <a class="brand" href="/" aria-label="Historical GIS home">
+        <span class="brand-mark" aria-hidden="true">HG</span>
+        <span><strong>Historical GIS</strong><small>Research workspace</small></span>
       </a>
-      <nav class="progress header-progress" aria-label="研究流程進度">
+      <nav class="progress header-progress" aria-label="Workflow progress">
         <div class="progress-step active" data-step="1"><span>1</span><div><strong>上載</strong><small>加入文本</small></div></div>
         <div class="progress-line"></div>
         <div class="progress-step" data-step="2"><span>2</span><div><strong>抽取</strong><small>選擇地名</small></div></div>
@@ -30,20 +30,20 @@
         <div class="progress-line"></div>
         <div class="progress-step" data-step="4"><span>4</span><div><strong>製圖</strong><small>編輯路線</small></div></div>
       </nav>
-      <div class="provider-pill" id="providerStatus"><i></i><span>連線中…</span></div>
+      <div class="provider-pill" id="providerStatus"><i></i><span>Connecting…</span></div>
     </div>
   </header>
 
   <main>
     <section class="intro" aria-labelledby="page-title">
-      <p class="eyebrow">文本 → 地名 → 座標 → 地圖</p>
+      <p class="eyebrow">TEXT → PLACES → COORDINATES → MAP</p>
       <h1 id="page-title">把歷史文本，整理成可追溯的地圖。</h1>
       <p>DeepSeek 抽取路線地名，你負責校訂；系統保留坐標來源、候選與人工修改記錄。</p>
     </section>
 
     <section class="step-card" id="step1">
       <div class="step-heading">
-        <div><span class="step-kicker">步驟一</span><h2>加入研究文本</h2></div>
+        <div><span class="step-kicker">STEP 01</span><h2>加入研究文本</h2></div>
         <p>支援 TXT、Markdown、Word 及文字型 PDF。</p>
       </div>
       <form id="uploadForm" class="upload-grid">
@@ -70,7 +70,7 @@
 
     <section class="step-card hidden" id="step2">
       <div class="step-heading">
-        <div><span class="step-kicker">步驟二</span><h2>抽取地名</h2></div>
+        <div><span class="step-kicker">STEP 02</span><h2>抽取地名</h2></div>
         <p>選擇每個地名屬於經過、提及或兩者。</p>
       </div>
       <dl class="document-context" aria-label="目前文本資料">
@@ -112,7 +112,7 @@
 
     <section class="step-card hidden" id="step3">
       <div class="step-heading">
-        <div><span class="step-kicker">步驟三</span><h2>配對經緯度</h2></div>
+        <div><span class="step-kicker">STEP 03</span><h2>配對經緯度</h2></div>
         <p>綜合歷史與現代來源；每個候選都保留出處和分數。</p>
       </div>
       <div class="source-strip" aria-label="Coordinate sources">
@@ -135,14 +135,13 @@
 
     <section class="step-card map-card hidden" id="step4">
       <div class="step-heading">
-        <div><span class="step-kicker">步驟四</span><h2>檢視與修訂地圖</h2></div>
-        <p>按地圖上的點可多選座標；亦可拖動點覆寫坐標，路線會即時重畫。</p>
+        <div><span class="step-kicker">STEP 04</span><h2>檢視與修訂地圖</h2></div>
+        <p>拖動點可覆寫坐標；路線會按文本次序即時重畫。</p>
       </div>
       <div class="toolbar">
         <button id="showMapBtn" class="button-accent">載入地圖</button>
         <a id="downloadMap" class="button-secondary button-link" href="#">下載 GeoJSON</a>
-        <button id="clearMapSelectionBtn" class="button-quiet" disabled>取消選取</button>
-        <button id="deleteMapPointBtn" class="button-danger" disabled>刪除已選座標</button>
+        <button id="deleteMapPointBtn" class="button-danger" disabled>刪除所選地點</button>
       </div>
       <div class="map-shell">
         <div id="mapView" class="map"></div>
@@ -151,7 +150,6 @@
             <span><i class="dot confirmed"></i>已確認</span>
             <span><i class="dot possible"></i>有可能</span>
             <span><i class="dot insufficient"></i>資料不足</span>
-            <span><i class="dot selected"></i>已選刪除</span>
           </div>
           <div class="status" id="mapStatus" aria-live="polite"></div>
         </div>
@@ -163,6 +161,6 @@
     <p><strong>研究提示</strong>　坐標分類反映現有來源與規則，並不等同歷史位置的最終證明。</p>
   </footer>
 
-  <script type="module" src="/static/app.js?v=20260819-1"></script>
+  <script type="module" src="/static/app.js?v=20260818-6"></script>
 </body>
 </html>
