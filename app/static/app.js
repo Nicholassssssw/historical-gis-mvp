@@ -680,22 +680,16 @@ async function loadMapData() {
 }
 
 async function showCurrentMap() {
-  setBusy($('#showMapBtn'), true, '載入中…');
   setStatus($('#mapStatus'), '正在載入 ArcGIS 地圖…');
   if (!mapState.view) $('#mapView').innerHTML = '<div class="map-placeholder">正在載入 ArcGIS 地圖…</div>';
   try {
     $('#downloadMap').href = `/api/projects/${projectId}/map.geojson?download=true`;
     await loadMapData();
   } catch(err) {
-    if (!mapState.view) $('#mapView').innerHTML = '<div class="map-placeholder">地圖未能載入，請按「載入地圖」重試</div>';
+    if (!mapState.view) $('#mapView').innerHTML = '<div class="map-placeholder">地圖未能載入，請返回步驟三重新確認座標再試</div>';
     setStatus($('#mapStatus'), err.message, true);
   }
-  finally { setBusy($('#showMapBtn'), false, '載入中…'); }
 }
-
-$('#showMapBtn').addEventListener('click', async () => {
-  await showCurrentMap();
-});
 
 $('#deleteMapPointBtn').addEventListener('click', async () => {
   const g = mapState.selectedGraphic;
