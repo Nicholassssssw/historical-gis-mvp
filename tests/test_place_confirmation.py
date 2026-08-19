@@ -6,7 +6,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from app.db import Base
-from app.main import _apply_detected_document_context, config as app_config, confirm_coordinates, confirm_places, map_geojson
+from app.main import _apply_detected_document_context, config as app_config, confirm_coordinates, confirm_places, delete_place, map_geojson
 from app.models import Place, Project
 from app.schemas import CoordinateSelectionConfirm, PlaceExtraction, PlaceSelectionConfirm
 
@@ -241,3 +241,35 @@ def test_geojson_download_supports_chinese_project_title(db):
     assert response.media_type == "application/geo+json"
     assert "filename*=UTF-8''" in response.headers["content-disposition"]
     assert payload["features"][0]["properties"]["coord_source"] == "CHGIS"
+
+
+def test_deleted_map_place_is_excluded_and_route_reconnects(db):
+    project, first, deleted = make_project_with_places(db)
+    last = Place(
+        project_id=project.id,
+        route_order=3,
+        original_name="蘇州",
+        normalized_name="蘇州",
+        sentence="後至蘇州。",
+        route_role="passed",
+        active=True,
+    )
+    db.add(last)
+    db.flush()
+    for place, lon, lat in (
+        (first, 120.15, 30.28),
+        (deleted, 119.40, 30.30),
+        (last, 120.62, 31.32),
+    ):
+        place.selected_lon = lon
+        place.selected_lat = lat
+        place.coordinate_selected = True
+    db.commit()
+
+    delete_place(deleted.id, db)
+    payload = json.loads(map_geojson(project.id, download=True, db=db).body)
+
+    point_features = [feature for feature in payload["features"] if feature["geometry"]["type"] == "Point"]
+    route_feature = next(feature for feature in payload["features"] if feature["geometry"]["type"] == "LineString")
+    assert [feature["properties"]["name"] for feature in point_features] == ["杭州", "蘇州"]
+    assert route_feature["geometry"]["coordinates"] == [[120.15, 30.28], [120.62, 31.32]]

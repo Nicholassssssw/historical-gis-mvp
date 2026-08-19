@@ -629,6 +629,42 @@ function pointSymbol(status) {
 
 function applyPointSymbol(g) { g.symbol = pointSymbol(g.attributes?.coord_class); }
 
+function routeSymbol() {
+  const routeColor = [58, 175, 53, 255];
+  return {
+    type:'cim',
+    data:{
+      type:'CIMSymbolReference',
+      symbol:{
+        type:'CIMLineSymbol',
+        symbolLayers:[
+          {type:'CIMSolidStroke', enable:true, width:1.25, color:routeColor},
+          {
+            type:'CIMVectorMarker',
+            enable:true,
+            size:5.5,
+            markerPlacement:{
+              type:'CIMMarkerPlacementAlongLineSameSize',
+              endings:'WithMarkers',
+              placementTemplate:[34],
+              angleToLine:true
+            },
+            frame:{xmin:-8, ymin:-5.6, xmax:2, ymax:5.6},
+            markerGraphics:[{
+              type:'CIMMarkerGraphic',
+              geometry:{rings:[[[-8,-5.47],[-8,5.6],[1.96,-0.03],[-8,-5.47]]]},
+              symbol:{
+                type:'CIMPolygonSymbol',
+                symbolLayers:[{type:'CIMSolidFill', enable:true, color:routeColor}]
+              }
+            }]
+          }
+        ]
+      }
+    }
+  };
+}
+
 function rebuildRoute() {
   if (!mapState.routeLayer || !mapState.pointLayer) return;
   mapState.routeLayer.removeAll();
@@ -637,7 +673,7 @@ function rebuildRoute() {
   const paths = [pts.map(g=>[g.geometry.longitude, g.geometry.latitude])];
   const g = new mapState.Graphic({
     geometry:{type:'polyline', paths, spatialReference:{wkid:4326}},
-    symbol:{type:'simple-line', color:'#315f9e', width:2},
+    symbol:routeSymbol(),
     attributes:{name:'文本次序暫定路線'}
   });
   mapState.routeLayer.add(g);
